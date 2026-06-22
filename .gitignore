@@ -1,0 +1,74 @@
+# =============================================================================
+# Python
+# =============================================================================
+
+# Byte-compiled / cached files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Pytest / testing
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+*.cover
+.vscode/settings.json
+
+# Type checking
+.mypy_cache/
+.pytype/
+.types_cache/
+
+# =============================================================================
+# Environments
+# =============================================================================
+
+# Virtual environments
+venv/
+env/
+.venv/
+.Python
+
+# Environment variables (contains API keys)
+.env
+.env.local
+.env.production
+
+# =============================================================================
+# IDE and editors
+# =============================================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+
+# Git
+*.orig
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
