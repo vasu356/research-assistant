@@ -4,13 +4,14 @@ agents/supervisor.py
 Supervisor Agent — orchestrates the multi-agent research workflow.
 
 Implements two core agentic patterns:
-  1. **ReAct (Reason + Act)**: The supervisor reasons about the current
+  1. ReAct (Reason + Act): The supervisor reasons about the current
      state and decides which worker agent to dispatch next.
-  2. **Self-Reflection**: After producing an initial final answer, the
-     supervisor reviews it and decides whether another pass is needed.
+  2. Self-Reflection: After synthesising a final answer, the supervisor
+     reviews its own output and decides whether another research pass is
+     needed.
 
-The supervisor uses hierarchical delegation — it never does research itself
-but coordinates the specialised worker agents.
+The supervisor uses hierarchical delegation — it never performs research
+itself but coordinates the specialised worker agents.
 """
 
 from __future__ import annotations
@@ -22,89 +23,90 @@ from typing import Any, Dict, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
+from config import settings
 from graph.state import ResearchState
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Routing action type
+# Types
 # ---------------------------------------------------------------------------
 
 Action = Literal["search", "summarize", "fact_check", "reflect", "finish"]
 
-MAX_ITERATIONS = 6
-
 # ---------------------------------------------------------------------------
-# Prompts
+# System prompts
 # ---------------------------------------------------------------------------
 
-SUPERVISOR_DECISION_SYSTEM = """You are the Supervisor Agent in a multi-agent research system.
+SUPERVISOR_DECISION_SYSTEM = """\
+You are the Supervisor Agent in a multi-agent research system.
 
 You orchestrate specialised worker agents to answer research queries thoroughly and accurately.
 
-## Your Worker Agents:
-- **search**: Web Search Agent — retrieves fresh information from the internet
-- **summarize**: Summarizer Agent — structures raw search results into a clear summary
-- **fact_check**: Fact Checker Agent — validates claims and flags uncertain information
-- **reflect**: Self-Reflection step — YOU review the draft answer and improve it
-- **finish**: Return the final polished answer to the user
+## Worker Agents
+- **search**     — Web Search Agent: retrieves fresh information from the internet
+- **summarize**  — Summarizer Agent: structures raw search results into a clear summary
+- **fact_check** — Fact Checker Agent: validates claims and flags uncertain information
+- **reflect**    — Self-Reflection step: YOU write the draft answer and review it
+- **finish**     — Return the final polished answer to the user
 
-## Your Decision Process (ReAct Pattern):
-1. REASON: Analyse what has been done so far and what is still needed.
-2. ACT: Choose the next agent to call OR decide to finish.
+## Decision Process (ReAct Pattern)
+1. REASON — Analyse what has been done so far and what is still needed.
+2. ACT    — Choose the next agent OR decide to finish.
 
-## Routing Rules:
-- Always start with "search" if search_results is missing.
-- Move to "summarize" once you have good search results but no summary.
-- Move to "fact_check" once you have a summary but no fact-check.
-- Move to "reflect" once you have all three components — write the first draft answer.
-- After reflection, decide: "finish" if quality is acceptable, or "search" again if major gaps remain.
-- ALWAYS "finish" if iteration_count >= 6 to prevent infinite loops.
+## Routing Rules
+- Always start with "search" when search_results is missing.
+- Move to "summarize" when search_results is present but summary is missing.
+- Move to "fact_check" when summary is present but fact_check is missing.
+- Move to "reflect" when all three components are present — write the first draft.
+- After reflection: "finish" if quality is acceptable; "search" again if major gaps remain.
+- ALWAYS "finish" when iteration_count >= {max_iterations} to prevent infinite loops.
 
-## Response Format:
-You MUST respond with ONLY valid JSON (no markdown, no explanation):
-{
-  "reasoning": "Your step-by-step analysis of the current state and what is needed",
+## Response Format
+Respond ONLY with valid JSON — no markdown fences, no preamble:
+{{
+  "reasoning": "Step-by-step analysis of the current state and what is needed",
   "next_action": "search|summarize|fact_check|reflect|finish",
-  "rationale": "One sentence explaining why you chose this action"
-}
-"""
+  "rationale": "One sentence explaining this choice"
+}}
+""".format(max_iterations=settings.MAX_ITERATIONS)
 
-SUPERVISOR_REFLECT_SYSTEM = """You are the Supervisor Agent performing a SELF-REFLECTION review.
+SUPERVISOR_REFLECT_SYSTEM = """\
+You are the Supervisor Agent performing a SELF-REFLECTION review.
 
-You have all research components assembled. Your job is to:
+All research components are assembled. Your job:
 1. Write a comprehensive, accurate final answer to the original query.
-2. Critically evaluate the draft answer you just wrote.
+2. Critically evaluate your draft.
 3. Decide if it meets the bar or needs improvement.
 
-## Components Available to You:
-- Original query
-- Web search results
+## Available Components
+- Original research query
+- Web search results (raw)
 - Structured summary
-- Fact-check report with flagged issues
+- Fact-check report with confidence scoring
 
-## Your Output Format:
+## Output Format
 
 ### 🎯 Final Research Answer
 
 **Executive Summary:**
-[2-3 sentence overview of the key answer]
+[2–3 sentence overview of the key answer]
 
 **Detailed Findings:**
-[Comprehensive answer addressing all aspects of the query, organised by theme]
+[Comprehensive answer organised by theme, addressing all aspects of the query]
 
 **Key Comparisons / Contrasts** (if applicable):
-[Side-by-side comparison of concepts if the query asks for comparison]
+[Side-by-side comparison if the query asks for one]
 
 **Confidence Assessment:**
-[Based on the fact-check, what is the overall reliability of this answer?]
+[Overall reliability based on the fact-check results]
 
 **Limitations & Caveats:**
 [What the research could not fully address, or areas of uncertainty]
 
 ---
 
-After writing the answer, add a REFLECTION block:
+After the answer, add a REFLECTION block:
 
 ### 🔄 Self-Reflection
 
@@ -121,38 +123,37 @@ After writing the answer, add a REFLECTION block:
 # Node functions
 # ---------------------------------------------------------------------------
 
-
 async def supervisor_decision_node(
     state: ResearchState, llm: ChatGroq
 ) -> Dict[str, Any]:
     """
     Supervisor decision node — implements the ReAct reasoning loop.
 
-    Evaluates the current state and decides which worker to dispatch next,
-    or whether the workflow is complete.
+    Evaluates the current workflow state and decides which worker to dispatch
+    next, or whether the workflow is complete.  Includes a hard iteration cap
+    to prevent infinite loops, and a heuristic fallback for unparseable LLM
+    responses.
 
     Args:
         state: Current workflow state.
-        llm: The Groq LLM instance.
+        llm:   Shared ChatGroq instance.
 
     Returns:
-        Partial state update with 'next_action', incremented 'iteration_count',
-        and appended messages.
+        Partial state dict with ``next_action``, incremented ``iteration_count``,
+        and an appended log message.
     """
-    logger.info(
-        "[Supervisor] Decision node — iteration %d", state["iteration_count"]
-    )
+    iteration = state["iteration_count"]
+    logger.info("[Supervisor] Decision node — iteration %d", iteration)
 
     # Hard stop to prevent infinite loops
-    if state["iteration_count"] >= MAX_ITERATIONS:
-        logger.warning("[Supervisor] Max iterations reached — forcing finish.")
+    if iteration >= settings.MAX_ITERATIONS:
+        logger.warning("[Supervisor] Max iterations (%d) reached — forcing finish.", settings.MAX_ITERATIONS)
         return {
             "next_action": "finish",
-            "iteration_count": state["iteration_count"] + 1,
-            "messages": ["[Supervisor] Max iterations reached. Forcing finish."],
+            "iteration_count": iteration + 1,
+            "messages": [f"[Supervisor] Max iterations ({settings.MAX_ITERATIONS}) reached. Forcing finish."],
         }
 
-    # Build a state summary for the LLM to reason about
     state_summary = _build_state_summary(state)
 
     try:
@@ -170,7 +171,7 @@ async def supervisor_decision_node(
         response = await llm.ainvoke(messages)
         raw = response.content.strip()
 
-        # Strip markdown code fences if present
+        # Strip optional markdown code fences
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -185,23 +186,19 @@ async def supervisor_decision_node(
 
         return {
             "next_action": next_action,
-            "iteration_count": state["iteration_count"] + 1,
+            "iteration_count": iteration + 1,
             "messages": [
-                f"[Supervisor] Iteration {state['iteration_count'] + 1}: "
-                f"Action={next_action} | {rationale}"
+                f"[Supervisor] Iteration {iteration + 1}: action={next_action} | {rationale}"
             ],
         }
 
-    except (json.JSONDecodeError, Exception) as e:
-        logger.error("[Supervisor] Decision failed: %s", e)
-        # Fallback: determine action from state heuristically
+    except (json.JSONDecodeError, Exception) as exc:
+        logger.error("[Supervisor] Decision failed (%s) — using heuristic fallback.", exc)
         next_action = _heuristic_next_action(state)
         return {
             "next_action": next_action,
-            "iteration_count": state["iteration_count"] + 1,
-            "messages": [
-                f"[Supervisor] Fallback decision: {next_action} (error: {e})"
-            ],
+            "iteration_count": iteration + 1,
+            "messages": [f"[Supervisor] Fallback decision: {next_action} (parse error: {exc})"],
         }
 
 
@@ -209,18 +206,19 @@ async def supervisor_reflect_node(
     state: ResearchState, llm: ChatGroq
 ) -> Dict[str, Any]:
     """
-    Supervisor self-reflection node — writes the final answer and reviews it.
+    Supervisor self-reflection node — synthesises all research into a final answer.
 
-    Synthesises all research components into a polished final answer and
-    performs a quality self-assessment to decide if the work is complete.
+    Writes a polished final answer from all assembled research components, then
+    performs a self-assessment to decide whether the answer is ready or whether
+    another research pass is warranted.
 
     Args:
-        state: Current workflow state with all research components populated.
-        llm: The Groq LLM instance.
+        state: Current workflow state (all research components should be populated).
+        llm:   Shared ChatGroq instance.
 
     Returns:
-        Partial state update with 'final_answer', 'reflection_notes',
-        updated 'next_action', and appended messages.
+        Partial state dict with ``final_answer``, ``reflection_notes``,
+        updated ``next_action``, and an appended log message.
     """
     logger.info("[Supervisor] Reflection node — synthesising final answer...")
 
@@ -232,10 +230,9 @@ async def supervisor_reflect_node(
                     f"Original Query: {state['query']}\n\n"
                     f"=== SEARCH RESULTS ===\n"
                     f"{(state.get('search_results') or '')[:2000]}\n\n"
-                    f"=== SUMMARY ===\n{state.get('summary', 'None')}\n\n"
-                    f"=== FACT-CHECK REPORT ===\n{state.get('fact_check', 'None')}\n\n"
-                    "Please write the comprehensive final answer "
-                    "and perform self-reflection."
+                    f"=== SUMMARY ===\n{state.get('summary') or 'None'}\n\n"
+                    f"=== FACT-CHECK REPORT ===\n{state.get('fact_check') or 'None'}\n\n"
+                    "Write the comprehensive final answer and perform self-reflection."
                 )
             ),
         ]
@@ -243,7 +240,7 @@ async def supervisor_reflect_node(
         response = await llm.ainvoke(messages)
         full_response = response.content.strip()
 
-        # Split answer from reflection block
+        # Split final answer from reflection block
         if "### 🔄 Self-Reflection" in full_response:
             parts = full_response.split("### 🔄 Self-Reflection", 1)
             final_answer = parts[0].strip()
@@ -252,14 +249,14 @@ async def supervisor_reflect_node(
             final_answer = full_response
             reflection_notes = "Self-reflection block not found in response."
 
-        # Parse verdict from reflection to decide next action
+        # Parse verdict: loop back only if improvement is needed AND budget remains
         needs_improvement = (
             "NEEDS_IMPROVEMENT" in reflection_notes.upper()
-            and state["iteration_count"] < MAX_ITERATIONS
+            and state["iteration_count"] < settings.MAX_ITERATIONS
         )
         next_action: Action = "search" if needs_improvement else "finish"
 
-        logger.info("[Supervisor] Reflection complete. Verdict → %s", next_action)
+        logger.info("[Supervisor] Reflection verdict → %s", next_action)
 
         return {
             "final_answer": final_answer,
@@ -271,9 +268,9 @@ async def supervisor_reflect_node(
             ],
         }
 
-    except Exception as e:
-        error_msg = f"Supervisor reflection error: {e}"
-        logger.error("[Supervisor] %s", error_msg)
+    except Exception as exc:
+        error_msg = f"Supervisor reflection error: {exc}"
+        logger.error("[Supervisor] %s", error_msg, exc_info=True)
         return {
             "final_answer": state.get("summary", "Unable to generate final answer."),
             "reflection_notes": f"Reflection failed: {error_msg}",
@@ -284,42 +281,81 @@ async def supervisor_reflect_node(
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Routing functions (conditional edge callbacks for LangGraph)
 # ---------------------------------------------------------------------------
 
+def route_after_decision(state: ResearchState) -> str:
+    """
+    Conditional edge function invoked by LangGraph after the supervisor decision node.
+
+    Maps the ``next_action`` state value to the corresponding graph node name.
+
+    Args:
+        state: Current workflow state.
+
+    Returns:
+        Node name string recognised by LangGraph.
+    """
+    action = state.get("next_action", "finish")
+    mapping: Dict[str, str] = {
+        "search":     "search_agent",
+        "summarize":  "summarizer_agent",
+        "fact_check": "fact_checker_agent",
+        "reflect":    "reflect",
+        "finish":     "__end__",
+    }
+    destination = mapping.get(action, "__end__")
+    logger.info("[Router] next_action=%r → node=%r", action, destination)
+    return destination
+
+
+def route_after_reflection(state: ResearchState) -> str:
+    """
+    Conditional edge function invoked by LangGraph after the reflection node.
+
+    Routes back to search if the self-reflection verdict is NEEDS_IMPROVEMENT
+    and the iteration budget has not been exhausted.
+
+    Args:
+        state: Current workflow state.
+
+    Returns:
+        Node name string recognised by LangGraph.
+    """
+    action = state.get("next_action", "finish")
+    if action == "search" and state["iteration_count"] < settings.MAX_ITERATIONS:
+        logger.info("[Router] Reflection NEEDS_IMPROVEMENT → search_agent")
+        return "search_agent"
+    logger.info("[Router] Reflection COMPLETE → __end__")
+    return "__end__"
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
 
 def _build_state_summary(state: ResearchState) -> str:
-    """Produce a compact text summary of what is present in the state."""
+    """Produce a compact human-readable summary of which state fields are populated."""
+
+    def _status(key: str) -> str:
+        value = state.get(key)
+        if not value:
+            return "❌ missing"
+        return f"✅ present ({len(value)} chars)"
+
     lines = [
-        "- search_results : "
-        + (
-            f"✅ present ({len(state['search_results'])} chars)"
-            if state.get("search_results")
-            else "❌ missing"
-        ),
-        "- summary        : "
-        + (
-            f"✅ present ({len(state['summary'])} chars)"
-            if state.get("summary")
-            else "❌ missing"
-        ),
-        "- fact_check     : "
-        + (
-            f"✅ present ({len(state['fact_check'])} chars)"
-            if state.get("fact_check")
-            else "❌ missing"
-        ),
-        "- final_answer   : "
-        + ("✅ present" if state.get("final_answer") else "❌ missing"),
-        "- reflection     : "
-        + ("✅ present" if state.get("reflection_notes") else "❌ missing"),
+        f"- search_results : {_status('search_results')}",
+        f"- summary        : {_status('summary')}",
+        f"- fact_check     : {_status('fact_check')}",
+        f"- final_answer   : {'✅ present' if state.get('final_answer') else '❌ missing'}",
+        f"- reflection     : {'✅ present' if state.get('reflection_notes') else '❌ missing'}",
         f"- iteration_count: {state['iteration_count']}",
     ]
     return "\n".join(lines)
 
 
 def _heuristic_next_action(state: ResearchState) -> Action:
-    """Fallback routing when the LLM decision cannot be parsed."""
+    """Deterministic fallback routing when the LLM response cannot be parsed."""
     if not state.get("search_results"):
         return "search"
     if not state.get("summary"):
@@ -329,51 +365,3 @@ def _heuristic_next_action(state: ResearchState) -> Action:
     if not state.get("final_answer"):
         return "reflect"
     return "finish"
-
-
-def route_after_decision(state: ResearchState) -> str:
-    """
-    Conditional edge function called by LangGraph after the supervisor decision node.
-
-    Maps the 'next_action' value in state to the appropriate graph node name.
-
-    Args:
-        state: Current workflow state.
-
-    Returns:
-        Name of the next node to execute.
-    """
-    action = state.get("next_action", "finish")
-    mapping: Dict[str, str] = {
-        "search": "search_agent",
-        "summarize": "summarizer_agent",
-        "fact_check": "fact_checker_agent",
-        "reflect": "reflect",
-        "finish": "__end__",
-    }
-    destination = mapping.get(action, "__end__")
-    logger.info("[Router] next_action='%s' → node='%s'", action, destination)
-    return destination
-
-
-def route_after_reflection(state: ResearchState) -> str:
-    """
-    Conditional edge function called by LangGraph after the reflection node.
-
-    If the reflection verdict is NEEDS_IMPROVEMENT, routes back to search.
-    Otherwise routes to the end.
-
-    Args:
-        state: Current workflow state.
-
-    Returns:
-        Name of the next node to execute.
-    """
-    action = state.get("next_action", "finish")
-    if action == "search" and state["iteration_count"] < MAX_ITERATIONS:
-        logger.info(
-            "[Router] Reflection says NEEDS_IMPROVEMENT → re-routing to search_agent"
-        )
-        return "search_agent"
-    logger.info("[Router] Reflection complete → __end__")
-    return "__end__"

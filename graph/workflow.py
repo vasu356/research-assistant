@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 from typing import Any
 
 from langchain_groq import ChatGroq
@@ -42,16 +43,10 @@ from agents.supervisor import (
     supervisor_decision_node,
     supervisor_reflect_node,
 )
+from config import settings
 from graph.state import ResearchState
 
 logger = logging.getLogger(__name__)
-
-# Default model configuration
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
-DEFAULT_TEMPERATURE = 0.1
-DEFAULT_MAX_TOKENS = 4096
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_TIMEOUT = 60.0
 
 
 def build_workflow(llm: ChatGroq) -> Any:
@@ -69,38 +64,26 @@ def build_workflow(llm: ChatGroq) -> Any:
     """
     logger.info("[Workflow] Building research assistant graph...")
 
-    # ------------------------------------------------------------------
-    # 1. Initialise the StateGraph with our shared state schema
-    # ------------------------------------------------------------------
     graph = StateGraph(ResearchState)
 
-    # ------------------------------------------------------------------
-    # 2. Wrap each async node with the shared LLM via partial application
-    # ------------------------------------------------------------------
+    # Wrap each async node with the shared LLM via partial application
     supervisor_decide = functools.partial(supervisor_decision_node, llm=llm)
     supervisor_reflect = functools.partial(supervisor_reflect_node, llm=llm)
     search_node = functools.partial(search_agent_node, llm=llm)
     summarizer_node = functools.partial(summarizer_agent_node, llm=llm)
     fact_checker_node = functools.partial(fact_checker_agent_node, llm=llm)
 
-    # ------------------------------------------------------------------
-    # 3. Register nodes
-    # ------------------------------------------------------------------
+    # Register nodes
     graph.add_node("supervisor_decision", supervisor_decide)
     graph.add_node("search_agent", search_node)
     graph.add_node("summarizer_agent", summarizer_node)
     graph.add_node("fact_checker_agent", fact_checker_node)
     graph.add_node("reflect", supervisor_reflect)
 
-    # ------------------------------------------------------------------
-    # 4. Set entry point
-    # ------------------------------------------------------------------
+    # Entry point
     graph.set_entry_point("supervisor_decision")
 
-    # ------------------------------------------------------------------
-    # 5. Conditional edges from supervisor_decision
-    #    route_after_decision maps next_action → node name
-    # ------------------------------------------------------------------
+    # Conditional edges from supervisor_decision
     graph.add_conditional_edges(
         "supervisor_decision",
         route_after_decision,
@@ -113,17 +96,12 @@ def build_workflow(llm: ChatGroq) -> Any:
         },
     )
 
-    # ------------------------------------------------------------------
-    # 6. After each worker, always return to supervisor for re-evaluation
-    # ------------------------------------------------------------------
+    # After each worker, return to supervisor for re-evaluation
     graph.add_edge("search_agent", "supervisor_decision")
     graph.add_edge("summarizer_agent", "supervisor_decision")
     graph.add_edge("fact_checker_agent", "supervisor_decision")
 
-    # ------------------------------------------------------------------
-    # 7. Conditional edge from reflect:
-    #    COMPLETE → END, NEEDS_IMPROVEMENT → search_agent (loop)
-    # ------------------------------------------------------------------
+    # Conditional edge from reflect: COMPLETE → END, NEEDS_IMPROVEMENT → loop
     graph.add_conditional_edges(
         "reflect",
         route_after_reflection,
@@ -133,43 +111,54 @@ def build_workflow(llm: ChatGroq) -> Any:
         },
     )
 
-    # ------------------------------------------------------------------
-    # 8. Compile and return
-    # ------------------------------------------------------------------
     compiled = graph.compile()
     logger.info("[Workflow] Graph compiled successfully.")
     return compiled
 
 
 def get_llm(
-    model: str = DEFAULT_MODEL,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_retries: int = DEFAULT_MAX_RETRIES,
-    timeout: float = DEFAULT_TIMEOUT,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_retries: int | None = None,
+    timeout: float | None = None,
 ) -> ChatGroq:
     """
-    Create a configured ChatGroq LLM instance.
+    Create a configured ChatGroq LLM instance from centralised settings.
 
-    Reads ``GROQ_API_KEY`` from environment (loaded via python-dotenv in
-    :func:`main.main`).  Additional configuration can be supplied via
-    environment variables:
-
-    * ``GROQ_MODEL`` — override the default model name.
-    * ``GROQ_TEMPERATURE`` — override the default temperature.
+    All parameters fall back to values from ``config.settings``, which in
+    turn read from environment variables.  Pass explicit arguments only
+    when you need to override for testing.
 
     Args:
-        model: Groq model name (default: llama-3.3-70b-versatile).
-        temperature: Sampling temperature (low = more deterministic).
-        max_retries: Number of retries for failed requests (default: 3).
-        timeout: Request timeout in seconds (default: 60.0).
+        model:       Groq model name (default: settings.GROQ_MODEL).
+        temperature: Sampling temperature (default: settings.GROQ_TEMPERATURE).
+        max_retries: Retry count for failed requests (default: settings.GROQ_MAX_RETRIES).
+        timeout:     Request timeout in seconds (default: settings.GROQ_TIMEOUT).
 
     Returns:
         A configured ChatGroq instance.
+
+    Raises:
+        EnvironmentError: If GROQ_API_KEY is not configured.
     """
+    settings.validate()
+
+    resolved_model = model or settings.GROQ_MODEL
+    resolved_temp = temperature if temperature is not None else settings.GROQ_TEMPERATURE
+    resolved_retries = max_retries if max_retries is not None else settings.GROQ_MAX_RETRIES
+    resolved_timeout = timeout if timeout is not None else settings.GROQ_TIMEOUT
+
+    logger.info(
+        "[Workflow] Initialising LLM: model=%s, temperature=%.2f, max_tokens=%d",
+        resolved_model,
+        resolved_temp,
+        settings.GROQ_MAX_TOKENS,
+    )
+
     return ChatGroq(
-        model=model,
-        temperature=temperature,
-        max_tokens=DEFAULT_MAX_TOKENS,
-        max_retries=max_retries,
-        timeout=timeout,
+        model=resolved_model,
+        temperature=resolved_temp,
+        max_tokens=settings.GROQ_MAX_TOKENS,
+        max_retries=resolved_retries,
+        timeout=resolved_timeout,
     )

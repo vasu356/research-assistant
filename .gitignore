@@ -1,74 +1,53 @@
-# =============================================================================
 # Python
-# =============================================================================
-
-# Byte-compiled / cached files
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-.eggs/
+*.pyo
+*.pyd
+.Python
 *.egg
-pip-wheel-metadata/
-
-# Pytest / testing
-.pytest_cache/
-.coverage
-coverage/
-htmlcov/
-*.cover
-.vscode/settings.json
-
-# Type checking
-.mypy_cache/
-.pytype/
-.types_cache/
-
-# =============================================================================
-# Environments
-# =============================================================================
+*.egg-info/
+dist/
+build/
+.eggs/
+.installed.cfg
 
 # Virtual environments
+.venv/
 venv/
 env/
-.venv/
-.Python
+ENV/
 
-# Environment variables (contains API keys)
+# Environment / secrets — NEVER commit
 .env
-.env.local
-.env.production
+*.local
 
-# =============================================================================
-# IDE and editors
-# =============================================================================
+# Test and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
+# Type checkers
+.mypy_cache/
+.dmypy.json
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 
-# =============================================================================
-# Project-specific
-# =============================================================================
-
-# Git
-*.orig
-
-# Logs
-*.log
-
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-Desktop.ini
+
+# Research outputs (generated at runtime)
+research_outputs/
+
+# Docker
+.dockerignore
+
+# Distribution
+*.whl
+*.tar.gz

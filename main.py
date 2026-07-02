@@ -4,14 +4,15 @@ main.py
 Entry point for the Multi-Agent Research Assistant.
 
 Orchestrates a supervisor-driven multi-agent workflow that:
-1. Searches the web for relevant information (Search Agent)
-2. Structures raw results into a coherent summary (Summarizer Agent)
-3. Validates claims and flags uncertainties (Fact Checker Agent)
-4. Synthesises a final answer with self-reflection (Supervisor Agent)
+  1. Searches the web for relevant information  (Search Agent)
+  2. Structures raw results into a coherent summary  (Summarizer Agent)
+  3. Validates claims and flags uncertainties  (Fact Checker Agent)
+  4. Synthesises a final answer with self-reflection  (Supervisor Agent)
 
 Usage:
     python main.py
     python main.py "Your custom research query here"
+    LOG_LEVEL=DEBUG python main.py "Deep dive query"
 """
 
 from __future__ import annotations
@@ -26,18 +27,19 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
-# Load .env before any LangChain/Groq imports that read env vars
+# Load .env before any imports that read environment variables
 load_dotenv()
 
+from config import settings
 from graph.state import ResearchState, initial_state
 from graph.workflow import build_workflow, get_llm
 
 # ---------------------------------------------------------------------------
-# Logging configuration
+# Logging
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%H:%M:%S",
 )
@@ -51,17 +53,15 @@ DEFAULT_QUERY = (
     "What are the latest developments in LLM reasoning models in 2025 "
     "and how do they compare to traditional chain-of-thought approaches?"
 )
-
 SEPARATOR = "=" * 80
-OUTPUT_DIR = Path("research_outputs")
 
 # ---------------------------------------------------------------------------
-# Spinner / Progress Indicator
+# CLI progress indicator
 # ---------------------------------------------------------------------------
 
 
 class Spinner:
-    """Simple async spinner for progress indication during long operations."""
+    """Async braille spinner shown during long-running pipeline steps."""
 
     FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -71,7 +71,6 @@ class Spinner:
         self._task: asyncio.Task[None] | None = None
 
     async def _spin(self) -> None:
-        """Animate spinner frames in-place."""
         i = 0
         while self._running:
             print(f"\r  {self.FRAMES[i]} {self.message}...", end="", flush=True)
@@ -79,20 +78,16 @@ class Spinner:
             await asyncio.sleep(0.1)
 
     async def start(self) -> None:
-        """Start the spinner."""
         self._running = True
         self._task = asyncio.create_task(self._spin())
 
     async def stop(self, final_message: str = "") -> None:
-        """Stop the spinner and print final message."""
         self._running = False
         if self._task is not None:
             await self._task
             self._task = None
-        if final_message:
-            print(f"\r  \u2713 {final_message}")
-        else:
-            print("\r  \u2713 Done")
+        msg = final_message or "Done"
+        print(f"\r  \u2713 {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +104,7 @@ def print_section(title: str, content: str) -> None:
 
 
 def merge_state_update(state: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge a partial LangGraph update into the accumulated state."""
+    """Merge a partial LangGraph node update into the accumulated full state."""
     merged = dict(state)
     for key, value in update.items():
         if key == "messages" and value:
@@ -136,26 +131,25 @@ def _sanitize_filename(text: str, max_length: int = 50) -> str:
 
 def save_results_to_markdown(state: Dict[str, Any], query: str) -> Path:
     """
-    Save research results to a timestamped markdown file.
+    Persist all research outputs to a timestamped markdown file.
 
     Args:
-        state: Final workflow state.
-        query: Original research query.
+        state: Final workflow state dict.
+        query: Original research query (used in filename).
 
     Returns:
-        Path to the saved markdown file.
+        Path to the written file.
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_query = _sanitize_filename(query)
-    filename = f"research_{timestamp}_{safe_query}.md"
-    output_dir = OUTPUT_DIR
-    output_dir.mkdir(exist_ok=True)
-    output_path = output_dir / filename
+    output_path = settings.OUTPUT_DIR / f"research_{timestamp}_{safe_query}.md"
+    settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     sections: List[str] = [
         "# Research Results\n",
         f"**Query:** {query}\n",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+        f"**Model:** {settings.GROQ_MODEL}\n",
         "---\n",
         "## Search Results\n",
         state.get("search_results") or "N/A",
@@ -179,12 +173,12 @@ def save_results_to_markdown(state: Dict[str, Any], query: str) -> Path:
     ]
 
     output_path.write_text("\n".join(sections), encoding="utf-8")
-    logger.info("Results saved to: %s", output_path)
+    logger.info("Results saved → %s", output_path)
     return output_path
 
 
 # ---------------------------------------------------------------------------
-# Workflow execution
+# Pipeline execution
 # ---------------------------------------------------------------------------
 
 
@@ -192,18 +186,19 @@ async def run_research(query: str) -> Dict[str, Any]:
     """
     Execute the full multi-agent research pipeline for a given query.
 
-    Streams live progress messages from each agent as they run, then
-    performs a final ainvoke to obtain the fully-merged state.
+    Streams live agent progress messages as the graph executes, then
+    returns the fully-merged final state.
 
     Args:
         query: The research question to investigate.
 
     Returns:
-        The final, fully-populated workflow state dict.
+        Final, fully-populated workflow state dict.
     """
     print(f"\n{'MULTI-AGENT RESEARCH ASSISTANT':^80}")
     print(SEPARATOR)
-    print(f"Query: {query}")
+    print(f"Query : {query}")
+    print(f"Model : {settings.GROQ_MODEL}")
     print(SEPARATOR)
 
     llm = get_llm()
@@ -211,23 +206,21 @@ async def run_research(query: str) -> Dict[str, Any]:
     state: ResearchState = initial_state(query)
     final_state: Dict[str, Any] = dict(state)
 
-    start_time = time.time()
-    logger.info("Starting workflow execution...")
+    start_time = time.perf_counter()
+    logger.info("Workflow execution started.")
 
-    spinner = Spinner("Initializing workflow")
+    spinner = Spinner("Running pipeline")
     await spinner.start()
 
-    # Stream once for live progress and accumulate the final merged state.
     async for chunk in workflow.astream(state, stream_mode="updates"):
-        for _node_name, node_output in chunk.items():
-            elapsed = time.time() - start_time
+        for node_name, node_output in chunk.items():
+            elapsed = time.perf_counter() - start_time
             for msg in node_output.get("messages", []):
-                print(f"  [{elapsed:5.1f}s] {msg}")
+                print(f"\r  [{elapsed:5.1f}s] {msg}")
             final_state = merge_state_update(final_state, node_output)
 
-    await spinner.stop("Workflow complete")
-
-    elapsed_total = time.time() - start_time
+    elapsed_total = time.perf_counter() - start_time
+    await spinner.stop(f"Pipeline complete in {elapsed_total:.1f}s")
     logger.info("Workflow complete in %.1fs", elapsed_total)
 
     return final_state
@@ -240,54 +233,46 @@ async def run_research(query: str) -> Dict[str, Any]:
 
 def display_results(state: Dict[str, Any], query: str) -> None:
     """
-    Display all research outputs from the final state in a readable format
-    and save to markdown file.
+    Print all research outputs to stdout and save a markdown export.
 
     Args:
-        state: Final workflow state.
-        query: Original research query (for filename).
+        state: Final workflow state dict.
+        query: Original research query (used for export filename).
     """
     print(f"\n\n{'RESEARCH COMPLETE':^80}")
 
-    # Search Results (truncated preview)
     search = state.get("search_results") or "N/A"
-    search_preview = (
-        search[:500] + "\n... [truncated]" if len(search) > 500 else search
-    )
-    print_section("SEARCH RESULTS (preview)", search_preview)
-
+    preview = search[:500] + "\n... [truncated]" if len(search) > 500 else search
+    print_section("SEARCH RESULTS (preview)", preview)
     print_section("STRUCTURED SUMMARY", state.get("summary") or "N/A")
     print_section("FACT-CHECK REPORT", state.get("fact_check") or "N/A")
     print_section("SELF-REFLECTION NOTES", state.get("reflection_notes") or "N/A")
     print_section("FINAL ANSWER", state.get("final_answer") or "N/A")
-
     print_section(
         "WORKFLOW METADATA",
         f"  Iterations    : {state.get('iteration_count', 0)}\n"
         f"  Agent messages: {len(state.get('messages', []))}\n"
         f"  Error         : {state.get('error') or 'None'}",
     )
-
     print_section("AGENT MESSAGE LOG", "\n".join(state.get("messages", [])))
 
-    # Save to markdown file
     try:
         output_path = save_results_to_markdown(state, query)
-        print(f"\n  \U0001f4c1 Results saved to: {output_path}")
-    except Exception as e:
-        logger.error("Failed to save results to file: %s", e)
-        print(f"\n  \u26a0\ufe0f  Could not save results to file: {e}")
+        print(f"\n  \U0001f4c1 Results saved → {output_path}")
+    except Exception as exc:
+        logger.error("Failed to save markdown export: %s", exc)
+        print(f"\n  \u26a0\ufe0f  Could not save results: {exc}")
 
     print(f"\n{SEPARATOR}\n")
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Entry point
 # ---------------------------------------------------------------------------
 
 
 async def main() -> None:
-    """Main async entry point."""
+    """Async CLI entry point."""
     query = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_QUERY
 
     try:
@@ -296,10 +281,14 @@ async def main() -> None:
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")
         sys.exit(0)
-    except Exception as e:
-        logger.exception("Workflow failed with unhandled error: %s", e)
-        print(f"\n\u274c ERROR: {e}")
-        print("Make sure GROQ_API_KEY is set in your .env file.")
+    except EnvironmentError as exc:
+        # Config validation failure (missing API key)
+        print(f"\n\u274c CONFIG ERROR: {exc}")
+        sys.exit(1)
+    except Exception as exc:
+        logger.exception("Unhandled pipeline error: %s", exc)
+        print(f"\n\u274c ERROR: {exc}")
+        print("Ensure GROQ_API_KEY is set in your .env file.")
         sys.exit(1)
 
 

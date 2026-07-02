@@ -4,8 +4,8 @@ build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "research-assistant"
-version = "1.0.0"
-description = "Multi-Agent Research Assistant — a production-grade system built with LangGraph that orchestrates specialized AI agents for deep, fact-checked research."
+version = "1.1.0"
+description = "Multi-Agent Research Assistant — LangGraph supervisor workflow with ReAct search, summarization, fact-checking, and self-reflection."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -13,7 +13,7 @@ authors = [
 ]
 keywords = [
     "langgraph", "langchain", "groq", "multi-agent", "ai", "research",
-    "agentic", "llm", "duckduckgo", "rag",
+    "agentic", "llm", "duckduckgo", "react", "supervisor", "fact-checking",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -42,10 +42,11 @@ dependencies = [
 [project.urls]
 "Source Code" = "https://github.com/vasu356/research-assistant"
 "Bug Tracker" = "https://github.com/vasu356/research-assistant/issues"
+"Documentation" = "https://github.com/vasu356/research-assistant/tree/main/docs"
 "LinkedIn" = "https://www.linkedin.com/in/vasu-agrawal-m26a2003y"
 
 [tool.setuptools.packages.find]
-include = ["research_assistant*"]
+include = ["agents*", "config*", "graph*", "tools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,5 +54,10 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["agents", "graph", "tools"]
+source = ["agents", "config", "graph", "tools"]
 omit = ["*/tests/*"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_strict_optional = true

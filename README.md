@@ -1,107 +1,157 @@
 # Multi-Agent Research Assistant
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-green?logo=langchain)](https://langchain-ai.github.io/langgraph/)
-[![LangChain](https://img.shields.io/badge/LangChain-0.3%2B-brightgreen?logo=langchain)](https://python.langchain.com)
-[![Groq](https://img.shields.io/badge/LLM-Groq%20(Llama%203.3%2070B)-orange)](https://console.groq.com)
-[![Search](https://img.shields.io/badge/Search-DuckDuckGo_(Free)-red)](https://duckduckgo.com)
-[![Async](https://img.shields.io/badge/Async-asyncio-purple)](https://docs.python.org/3/library/asyncio.html)
-[![License](https://img.shields.io/badge/License-MIT-lightgrey)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/vasu356/research-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/vasu356/research-assistant/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.10%20|%203.11%20|%203.12-blue?logo=python)](https://www.python.org)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-green)](https://langchain-ai.github.io/langgraph/)
+[![LLM](https://img.shields.io/badge/LLM-Groq%20%E2%80%93%20Llama%203.3%2070B-orange)](https://console.groq.com)
+[![Search](https://img.shields.io/badge/Search-DuckDuckGo%20(free%2C%20no%20key)-red)](https://duckduckgo.com)
+[![Tests](https://img.shields.io/badge/Tests-38%20passing-brightgreen)](#testing)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-A **production-grade multi-agent research system** built with **LangGraph** that uses hierarchical delegation to orchestrate specialised AI agents — each with a single responsibility — to produce deep, fact-checked research answers with self-reflection and iterative improvement.
+A **production-grade multi-agent research system** built with **LangGraph** that orchestrates four specialised AI agents under a hierarchical supervisor to produce deep, fact-checked research answers — complete with self-reflection and iterative quality improvement.
+
+---
+
+## Problem Statement
+
+Large language models are powerful but have three critical weaknesses when used for research:
+
+1. **Stale knowledge** — training cutoffs mean they miss recent events.
+2. **Hallucination** — they confidently produce plausible-sounding but incorrect claims.
+3. **Monolithic outputs** — a single LLM call mixes retrieval, reasoning, and synthesis, making quality control impossible.
+
+This project solves all three by decomposing research into a **pipeline of specialised agents**: each agent has one job, a defined input/output contract, and is evaluated by peers before results reach the user.
 
 ---
 
 ## Features
 
-- 🧠 **Multi-Agent Architecture** — Four specialised agents coordinated by a supervisor
-- 🔄 **ReAct Pattern** — Agents reason about state, act via tools, and observe results
-- 🏗️ **Hierarchical Delegation** — Supervisor routes work to specialists, never does work itself
-- 🔍 **Self-Reflection** — Final answer is critically evaluated; can trigger re-search for improvement
-- 🛠️ **Tool-Calling** — Search agent autonomously decides search strategy
-- ✅ **Fact-Checking** — Every claim is validated with confidence scoring
-- 📊 **LangGraph State Management** — Typed, append-only state propagates through the graph
-- 📁 **Markdown Export** — Results saved to timestamped markdown files
-- 🌐 **Free Web Search** — DuckDuckGo integration (no API key required)
-- 🧪 **Comprehensive Tests** — 38 tests with mocked LLM and tools (no network/API needed)
+| Feature | Description |
+|---------|-------------|
+| 🏗️ **Hierarchical delegation** | Supervisor routes work to specialists; never does research itself |
+| 🔄 **ReAct pattern** | Agents reason → act → observe in autonomous loops |
+| 🌐 **Real-time web search** | DuckDuckGo integration — no API key, no cost |
+| ✅ **Claim-by-claim fact-checking** | Confidence scoring (HIGH / MEDIUM / FLAG) on every major claim |
+| 🔁 **Self-reflection & refinement** | Supervisor reviews its own answer and can trigger a re-search pass |
+| 🛡️ **Infinite-loop protection** | Hard iteration cap with heuristic fallback routing |
+| 📁 **Markdown export** | Timestamped research files saved automatically |
+| ⚙️ **Fully configurable** | All tuneable values in `.env` — model, temperature, timeouts, result counts |
+| 🧪 **38 offline tests** | Complete test suite with mocked LLM and tools — no network or API key required |
+| 🐳 **Docker-ready** | Multi-stage Dockerfile with non-root user and volume mount |
+| 🔁 **GitHub Actions CI** | Lint, format check, type check, and test matrix (3.10 / 3.11 / 3.12) |
 
 ---
 
 ## Architecture
 
-```
-                         ┌─────────────────────────────────┐
-                         │         USER QUERY               │
-                         └──────────────┬──────────────────┘
-                                        │
-                                        ▼
-                         ┌─────────────────────────────────┐
-                         │       SUPERVISOR AGENT           │
-                         │  (ReAct: Reason + Act Loop)      │
-                         │                                  │
-                         │  Evaluates state completeness    │
-                         │  and decides next worker         │
-                         └──────────┬──────────────────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              │ "search"            │ "summarize"          │ "fact_check"
-              ▼                     ▼                      ▼
-   ┌────────────────────┐ ┌──────────────────┐ ┌─────────────────────┐
-   │   SEARCH AGENT     │ │  SUMMARIZER      │ │  FACT CHECKER       │
-   │                    │ │  AGENT           │ │  AGENT              │
-   │  • DuckDuckGo web  │ │                  │ │                     │
-   │    + news search   │ │  • Structures    │ │  • Validates claims │
-   │  • ReAct tool loop │ │    raw results   │ │  • Flags uncertain  │
-   │  • Multi-query     │ │  • Markdown      │ │    information      │
-   │    strategy        │ │    output        │ │  • Confidence       │
-   │  • Auto-decides    │ │  • Source refs   │ │    scoring          │
-   │    when done       │ │                  │ │                     │
-   └─────────┬──────────┘ └────────┬─────────┘ └──────────┬──────────┘
-             │                     │                       │
-             └─────────────────────┴───────────────────────┘
-                                    │ (all return to supervisor)
-                                    │
-                                    ▼ "reflect"
-                         ┌─────────────────────────────────┐
-                         │    SELF-REFLECTION NODE          │
-                         │  (Supervisor writes + reviews    │
-                         │   final answer, assesses         │
-                         │   quality, decides verdict)      │
-                         └──────────┬──────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │ COMPLETE                       │ NEEDS_IMPROVEMENT
-                    ▼                                ▼
-              ┌──────────┐              ┌─────────────────────┐
-              │   END    │              │  Loop back to       │
-              │  (return │              │  search_agent       │
-              │  answer) │              │  (max 3 iterations) │
-              └──────────┘              └─────────────────────┘
+### System Overview
+
+```mermaid
+flowchart TD
+    USER([User Query]) --> MAIN[main.py\nasync pipeline]
+    MAIN --> SD[Supervisor Decision\nReAct reasoning loop]
+
+    SD -->|search| SA[Search Agent\nReAct + tool-calling]
+    SD -->|summarize| SUM[Summarizer Agent\nSingle LLM call]
+    SD -->|fact_check| FC[Fact Checker Agent\nSingle LLM call]
+    SD -->|reflect| REF[Reflect Node\nSupervisor writes + self-assesses]
+    SD -->|finish| END([Final Answer\n+ Markdown Export])
+
+    SA -->|search_results| SD
+    SUM -->|summary| SD
+    FC -->|fact_check| SD
+
+    REF -->|COMPLETE| END
+    REF -->|NEEDS_IMPROVEMENT| SA
+
+    SA <-->|web + news queries| DDG[(DuckDuckGo\nFree Search API)]
+    SA & SUM & FC & REF <-->|LLM calls| GROQ[(Groq\nLlama 3.3 70B)]
 ```
 
 ### Agent Responsibilities
 
-| Agent | Role | Pattern | Tools Used |
-|-------|------|---------|------------|
-| **Supervisor** | Orchestrates workflow, routes tasks, evaluates completeness | ReAct + Self-Reflection | LLM reasoning only |
-| **Search** | Retrieves web information, formulates search queries | ReAct with tool-calling | `duckduckgo_search`, `duckduckgo_news_search` |
-| **Summarizer** | Converts raw results to structured markdown summary | Single LLM call | LLM only |
-| **Fact Checker** | Validates claims, assigns confidence levels | Single LLM call | LLM only |
+| Agent | Role | Pattern | Tools |
+|-------|------|---------|-------|
+| **Supervisor** | Orchestrates workflow; evaluates completeness; routes to next agent | ReAct + Self-Reflection | LLM reasoning only |
+| **Search** | Retrieves fresh web information; formulates multi-query search strategy | ReAct + tool-calling | `duckduckgo_search`, `duckduckgo_news_search` |
+| **Summarizer** | Converts raw search results into structured markdown with sources | Single LLM call | LLM only |
+| **Fact Checker** | Validates every claim; assigns confidence levels; flags uncertainties | Single LLM call | LLM only |
+
+### Typical Request Flow
+
+```
+Query →
+  [Supervisor: "I need to search first"] →
+    [Search: web + news queries, 2-4 tool calls] →
+  [Supervisor: "Now summarize"] →
+    [Summarizer: structured markdown] →
+  [Supervisor: "Now fact-check"] →
+    [Fact Checker: claim-by-claim table] →
+  [Supervisor: "Now reflect"] →
+    [Reflect: write final answer + self-assess → COMPLETE] →
+Final Answer + Markdown file
+```
+
+---
+
+## Folder Structure
+
+```
+research-assistant/
+├── agents/                   # Specialist agent implementations
+│   ├── __init__.py
+│   ├── fact_checker.py       # Fact Checker Agent
+│   ├── search_agent.py       # Web Search Agent (ReAct)
+│   ├── summarizer.py         # Summarizer Agent
+│   └── supervisor.py         # Supervisor Agent + routing functions
+├── config/                   # Centralised configuration
+│   ├── __init__.py
+│   └── settings.py           # All env-driven settings (single source of truth)
+├── docs/                     # Project documentation
+│   ├── API.md                # Agent contracts, state schema, tool specs
+│   ├── Architecture.md       # Design patterns, Mermaid diagrams, extensibility
+│   ├── Contributing.md       # Development workflow and coding standards
+│   ├── Deployment.md         # Local, Docker, and cloud deployment
+│   └── Troubleshooting.md    # Common issues and debug guide
+├── graph/                    # LangGraph state and workflow
+│   ├── __init__.py
+│   ├── state.py              # ResearchState TypedDict schema
+│   └── workflow.py           # StateGraph construction and LLM factory
+├── tests/
+│   ├── __init__.py
+│   └── test_end_to_end.py    # 38 tests: unit + integration + e2e (all offline)
+├── tools/
+│   ├── __init__.py
+│   └── search_tools.py       # LangChain @tool definitions (DDG web + news)
+├── research_outputs/         # Auto-created: timestamped markdown exports
+├── .env.example              # All configuration options documented
+├── .github/
+│   ├── workflows/ci.yml      # GitHub Actions: lint + test + type-check
+│   └── ISSUE_TEMPLATE/       # Bug report and feature request templates
+├── Dockerfile                # Multi-stage build, non-root user
+├── docker-compose.yml
+├── main.py                   # CLI entry point
+├── pyproject.toml
+├── requirements.txt
+└── ruff.toml                 # Linter and formatter configuration
+```
 
 ---
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Agent Orchestration** | LangGraph 0.2+ |
-| **LLM Framework** | LangChain 0.3+ |
-| **LLM Provider** | Groq (LLaMA 3.3 70B) |
-| **Web Search** | DuckDuckGo (free, no API key) |
-| **State Schema** | TypedDict with append-only annotations |
-| **Async Runtime** | Python asyncio |
-| **Environment Management** | python-dotenv |
-| **Testing** | unittest with mocked LLM/tools |
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| Agent orchestration | [LangGraph](https://langchain-ai.github.io/langgraph/) | Stateful DAG with conditional edges; production-grade multi-agent support |
+| LLM framework | [LangChain](https://python.langchain.com) | Tool-binding, message abstractions, provider portability |
+| LLM provider | [Groq](https://groq.com) + Llama 3.3 70B | Sub-second inference; free tier; strong instruction-following |
+| Web search | [DuckDuckGo (ddgs)](https://pypi.org/project/ddgs/) | No API key required; covers both web and news |
+| Configuration | `python-dotenv` + `config/settings.py` | Single source of truth; validated at startup |
+| Async runtime | `asyncio` | Non-blocking LLM calls; all agents run in the same event loop |
+| Testing | `pytest` + `unittest.mock` | 38 offline tests covering unit, integration, and E2E scenarios |
+| Linting | [ruff](https://docs.astral.sh/ruff/) | 10–100× faster than flake8/black; single tool for lint + format |
+| CI/CD | GitHub Actions | Lint, format, type-check, test matrix across Python 3.10–3.12 |
+| Containerisation | Docker (multi-stage) | Reproducible builds; non-root runtime user; volume for outputs |
 
 ---
 
@@ -109,185 +159,169 @@ A **production-grade multi-agent research system** built with **LangGraph** that
 
 ### Prerequisites
 
-- **Python 3.10+**
-- A free [**Groq API key**](https://console.groq.com/keys)
+- Python 3.10+ 
+- A free [Groq API key](https://console.groq.com/keys) (takes 30 seconds)
 
-### Installation
+### Setup
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/vasu356/research-assistant.git
 cd research-assistant
 
-# 2. Create and activate a virtual environment
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-# source venv/bin/activate
-
-# 3. Install dependencies
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# 4. Configure environment variables
 cp .env.example .env
-# Edit .env and set your GROQ_API_KEY
+# Set GROQ_API_KEY=your_key in .env
 ```
 
-### Usage
+### Run
 
 ```bash
-# Run with the default sample query
+# Default query (LLM reasoning models 2025)
 python main.py
 
-# Run with a custom research query
-python main.py "What are the main differences between GPT-4o and Claude 3.5 Sonnet?"
+# Custom query
+python main.py "What are the key differences between RAG and fine-tuning for LLMs?"
 
-# Run tests
-python tests/test_end_to_end.py
+# With debug logging
+LOG_LEVEL=DEBUG python main.py "Your query"
 ```
 
-### Example Output
+### Docker
 
-```
-                          MULTI-AGENT RESEARCH ASSISTANT
-================================================================================
-Query: What are the latest developments in LLM reasoning models in 2025
-        and how do they compare to traditional chain-of-thought approaches?
-================================================================================
-  [  2.0s] [Supervisor] Iteration 1: Action=search | search_results missing
-  [ 50.9s] [SearchAgent] Completed 2 tool iteration(s). Retrieved 7 result block(s).
-  [ 55.3s] [Supervisor] Iteration 2: Action=summarize | search results available
-  [102.3s] [SummarizerAgent] Summary complete (4394 chars).
-  [105.5s] [Supervisor] Iteration 3: Action=fact_check | summary available
-  [119.8s] [FactCheckerAgent] Fact-check complete (3891 chars).
-  [122.5s] [Supervisor] Iteration 4: Action=reflect | all components ready
-  [137.7s] [Supervisor] Reflection complete. Verdict: COMPLETE
-
-  ✓ Workflow complete
-```
-
-Results are also saved to `research_outputs/research_YYYYMMDD_HHMMSS_query.md`.
-
----
-
-## Project Structure
-
-```
-research-assistant/
-├── agents/
-│   ├── __init__.py
-│   ├── fact_checker.py      # Fact Checker Agent
-│   ├── search_agent.py      # Web Search Agent
-│   ├── summarizer.py        # Summarizer Agent
-│   └── supervisor.py        # Supervisor (orchestrator + self-reflection)
-├── graph/
-│   ├── __init__.py
-│   ├── state.py             # ResearchState TypedDict
-│   └── workflow.py          # LangGraph StateGraph definition
-├── tools/
-│   ├── __init__.py
-│   └── search_tools.py      # DuckDuckGo tool definitions
-├── tests/
-│   ├── __init__.py
-│   └── test_end_to_end.py   # 38 tests (no network/API needed)
-├── main.py                  # Entry point
-├── pyproject.toml           # Project metadata and build config
-├── requirements.txt         # Python dependencies
-├── .env.example             # Environment variable template
-├── .gitignore
-├── LICENSE
-└── README.md
+```bash
+docker build -t research-assistant .
+docker run --env-file .env -v $(pwd)/research_outputs:/app/research_outputs \
+  research-assistant "Your query here"
 ```
 
 ---
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | — | **Required.** Your Groq API key |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
-| `GROQ_TEMPERATURE` | `0.1` | Sampling temperature (lower = more deterministic) |
-| `LOG_LEVEL` | `INFO` | Python logging level |
+All tuneable parameters live in `.env`. Copy `.env.example` to get started.
 
----
+```bash
+# Required
+GROQ_API_KEY=gsk_...
 
-## Agentic Patterns Implemented
-
-### 1. 🔄 ReAct (Reason + Act)
-Both the **Supervisor** and **Search Agent** implement the ReAct pattern:
-- **Reason**: Analyse current state/query, identify what's needed
-- **Act**: Call a tool or dispatch a worker agent
-- **Observe**: Review the result and decide next step
-
-### 2. 🏗️ Hierarchical Delegation
-The **Supervisor** never does research itself. It acts as a pure orchestrator:
-- Evaluates state after every worker node completion
-- Routes to the appropriate specialist based on what's missing
-- Enforces a max iteration limit (6 loops) to prevent infinite loops
-
-### 3. 🔍 Self-Reflection
-After all three workers have run, the Supervisor enters a reflection node where it:
-- Writes a comprehensive final answer synthesising all components
-- Critically evaluates the answer's quality (coverage, accuracy, depth)
-- Returns a **COMPLETE** or **NEEDS_IMPROVEMENT** verdict
-- If improvement needed, loops back to re-search (capped by max iterations)
-
-### 4. 🛠️ Tool-Calling
-The Search Agent uses LangChain's `bind_tools` to give the LLM autonomous control over:
-- `duckduckgo_search` — general web search
-- `duckduckgo_news_search` — recent news search
-
-The LLM decides how many searches to run and with what queries.
-
-### 5. 📊 State Management (LangGraph)
-All agents share a typed `ResearchState` managed by LangGraph:
-- Append-only `messages` list (via `operator.add` annotation)
-- Atomic state updates returned as dicts from each node
-- No global mutable state — everything flows through the graph
-
----
-
-## Extending the System
-
-- **Add a new agent**: Create `agents/my_agent.py`, register it in `graph/workflow.py`, add a routing case in `agents/supervisor.py`.
-- **Swap the search tool**: Replace DuckDuckGo in `tools/search_tools.py` with Tavily, SerpAPI, or Bing.
-- **Swap the LLM**: Change `get_llm()` in `graph/workflow.py` to use OpenAI, Anthropic, or another provider.
-- **Add memory**: Inject a `checkpointer` into `graph.compile()` for persistent conversation history.
-- **Add human-in-the-loop**: Use LangGraph's `interrupt_before` to pause and request user input.
+# Optional — shown with defaults
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_TEMPERATURE=0.1
+GROQ_MAX_TOKENS=4096
+GROQ_TIMEOUT=60
+MAX_ITERATIONS=6
+MAX_TOOL_ITERATIONS=4
+SEARCH_MAX_RESULTS=6
+NEWS_MAX_RESULTS=5
+OUTPUT_DIR=research_outputs
+LOG_LEVEL=INFO
+```
 
 ---
 
 ## Testing
 
-The test suite runs **38 tests** covering every component:
+```bash
+# Run all 38 tests (no network or API key required — fully mocked)
+python -m pytest tests/ -v
 
-```
+# With coverage report
+pip install pytest-cov
+python -m pytest tests/ --cov=agents --cov=graph --cov=tools --cov-report=term-missing
+
+# Direct runner with coloured output
 python tests/test_end_to_end.py
 ```
 
-Tests use mocked LLM and tools — no network access or API key required. The suite validates:
-- State schema correctness
-- Tool registry and error handling
-- Supervisor routing logic
-- Graph structure and node connectivity
-- Full end-to-end workflow with canned responses
-- Individual agent node error handling
-- Max iteration guard (infinite loop prevention)
+### Test Coverage
+
+| Test Class | What it tests |
+|-----------|--------------|
+| `TestStateSchema` | Initial state fields and defaults |
+| `TestSearchTools` | Tool registry, graceful error handling |
+| `TestSupervisorRouting` | All routing functions, heuristic fallback, state summary |
+| `TestWorkflowGraph` | Graph compiles, all nodes registered, edge count |
+| `TestSearchAgentNode` | Tool-calling loop, error propagation |
+| `TestSummarizerAgentNode` | Summary generation, empty-input guard, error handling |
+| `TestFactCheckerAgentNode` | Report generation, empty-input guard |
+| `TestSupervisorNodes` | JSON parsing, max-iteration hard stop, bad-JSON fallback, reflect split |
+| `TestEndToEndWorkflow` | Full pipeline run, field population, node visit order, infinite-loop guard |
+
+---
+
+## Design Decisions
+
+**Why LangGraph over vanilla LangChain?**
+LangGraph gives explicit, inspectable control over routing logic via conditional edges. The graph is a first-class object you can visualise, test the topology of, and reason about independent of the LLM calls.
+
+**Why a shared LLM instance?**
+`functools.partial` injects the single `ChatGroq` object into every node. Retry config, timeout, and model selection are set in one place. Swapping to a different provider requires changing exactly one function (`get_llm()`).
+
+**Why DuckDuckGo instead of a paid search API?**
+Zero cost, zero API key friction for contributors and evaluators. The tool registry (`TOOLS_BY_NAME`) makes it trivial to swap in Tavily, Serper, or Bing without touching agent code.
+
+**Why TypedDict for state instead of Pydantic?**
+LangGraph's `StateGraph` natively works with `TypedDict` for partial updates. Pydantic would require model copying on every node return — TypedDict partial dicts are lighter and idiomatic for LangGraph.
+
+**Why `Annotated[List[str], operator.add]` for messages?**
+LangGraph's reducer annotation means the framework automatically accumulates message appends across nodes, rather than overwriting. This gives a complete, chronological activity log without any merge logic in node code.
+
+---
+
+## Output Example
+
+After running, results appear in both the terminal and a timestamped file:
+
+```
+research_outputs/
+└── research_20250622_142301_What_are_the_latest_developments_in_LLM.md
+```
+
+Each file contains:
+- Original query and timestamp
+- Raw search results (all retrieved web + news content)
+- Structured summary (themed sections, key findings, statistics)
+- Fact-check report (confidence table, flagged issues, recommendations)
+- Self-reflection notes (quality assessment, verdict)
+- Final polished answer (executive summary, detailed findings, caveats)
+- Workflow metadata (iteration count, message log)
+
+---
+
+## Future Improvements
+
+- **Streaming API** — expose the agent pipeline as a FastAPI endpoint with SSE streaming
+- **Pluggable search backends** — Tavily, Serper, Bing with a provider abstraction layer
+- **Persistent memory** — store past research in a vector database for cross-session retrieval
+- **Citation tracking** — propagate source URLs through the pipeline to the final answer
+- **Parallelism** — run multiple sub-searches concurrently using `asyncio.gather`
+- **Evaluation framework** — automated quality scoring against a ground-truth question set
+- **Model switching** — hot-swap the LLM per-agent (fast model for search, large for synthesis)
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture.md](docs/Architecture.md) | Design patterns, Mermaid diagrams, sequence diagrams, extensibility guide |
+| [API.md](docs/API.md) | Agent contracts, state schema, tool specs, configuration reference |
+| [Deployment.md](docs/Deployment.md) | Local, Docker, and cloud deployment instructions |
+| [Troubleshooting.md](docs/Troubleshooting.md) | Common issues, debug logging, error explanations |
+| [Contributing.md](docs/Contributing.md) | Development setup, coding standards, PR guidelines |
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).
 
 ---
 
 ## Author
 
-**Vasu Agrawal**
-
-- [GitHub](https://github.com/vasu356)
-- [LinkedIn](https://www.linkedin.com/in/vasu-agrawal-m26a2003y)
+**Vasu Agrawal** — Decision Scientist & Backend Engineer  
+[LinkedIn](https://www.linkedin.com/in/vasu-agrawal-m26a2003y) · [GitHub](https://github.com/vasu356)

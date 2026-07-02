@@ -1,11 +1,16 @@
 """
 agents/search_agent.py
 -----------------------
-Web Search Agent — searches the web for relevant information.
+Web Search Agent — retrieves relevant, high-quality information from the web.
 
-Uses DuckDuckGo (no API key required) via LangChain tool-calling.
-Implements the ReAct pattern: the LLM reasons about what to search for,
-then calls the search tool, then reasons about whether results are sufficient.
+Implements the ReAct (Reason + Act) pattern:
+  1. REASON  — The LLM analyses the query and plans targeted sub-searches.
+  2. ACT     — It calls DuckDuckGo tools with focused queries.
+  3. OBSERVE — It reviews tool results and decides if more searches are needed.
+  4. DONE    — When satisfied, it stops the loop and returns consolidated results.
+
+The agent autonomously decides how many searches to run (up to MAX_TOOL_ITERATIONS)
+without any hard-coded query logic — all search strategy emerges from the LLM.
 """
 
 from __future__ import annotations
@@ -16,60 +21,57 @@ from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
 
+from config import settings
 from graph.state import ResearchState
-from tools.search_tools import TOOLS_BY_NAME, duckduckgo_search, duckduckgo_news_search
+from tools.search_tools import TOOLS_BY_NAME, duckduckgo_news_search, duckduckgo_search
 
 logger = logging.getLogger(__name__)
 
-# System prompt for the Search Agent
-SEARCH_AGENT_SYSTEM = """You are a specialized Web Search Agent in a multi-agent research system.
+SEARCH_AGENT_SYSTEM = """\
+You are a specialized Web Search Agent in a multi-agent research system.
 
 Your ONLY job is to search the web and retrieve relevant, high-quality information.
 
-## Your Process (ReAct Pattern):
-1. REASON: Analyse the research query and identify 2-3 specific sub-questions to answer.
-2. ACT: Call the search tools with targeted queries for each sub-question.
-3. OBSERVE: Review the results and decide if you need additional searches.
-4. SYNTHESIZE: Combine all raw results into a single coherent information block.
+## Your Process (ReAct Pattern)
+1. REASON  — Analyse the research query; identify 2–3 specific sub-questions.
+2. ACT     — Call search tools with targeted queries for each sub-question.
+3. OBSERVE — Review results; run additional searches if gaps remain.
+4. SYNTHESIZE — Return ALL raw information as a single labelled block.
 
-## Guidelines:
-- Break complex queries into focused sub-searches (e.g., "LLM reasoning 2025" + "chain-of-thought vs reasoning models")
-- Prefer recent sources — include the year in queries when looking for current info
-- Include both general web results and news results for comprehensive coverage
-- Return ALL raw information — do NOT summarise or filter heavily; the Summarizer will do that
-- Clearly label each result source
+## Search Guidelines
+- Break complex queries into focused sub-searches (e.g. "LLM reasoning 2025" + "chain-of-thought vs reasoning models benchmarks")
+- Prefer recent sources — append the current year to time-sensitive queries
+- Use both web search and news search for comprehensive coverage
+- Return ALL raw information without heavy filtering; the Summarizer will structure it
 
-## Output Format:
-Start with "=== WEB SEARCH RESULTS ===" then list all retrieved information with source labels.
+## Output Format
+Begin with "=== WEB SEARCH RESULTS ===" then list every retrieved item with source labels.
 """
-
-MAX_TOOL_ITERATIONS = 4
 
 
 async def search_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, Any]:
     """
-    Web Search Agent node function for LangGraph.
+    Web Search Agent node for LangGraph.
 
-    Receives the research query from state, uses tool-calling to search
-    the web, and returns raw search results.
+    Receives the research query from state, executes the ReAct tool-calling
+    loop to gather information, and returns raw consolidated search results.
 
-    The agent follows the ReAct pattern, autonomously deciding:
-    * How many searches to run
-    * What queries to formulate
-    * When sufficient information has been gathered
+    The agent independently determines:
+    - How many searches to run (up to ``settings.MAX_TOOL_ITERATIONS``)
+    - What queries to formulate
+    - When sufficient information has been gathered
 
     Args:
-        state: Current workflow state containing the query.
-        llm: The Groq LLM instance (passed in from workflow).
+        state: Current workflow state (must contain ``query``).
+        llm:   Shared ChatGroq instance injected by the workflow.
 
     Returns:
-        Partial state update with 'search_results' and appended messages.
+        Partial state dict with ``search_results`` (str) and appended ``messages``.
+        On failure, also sets ``error``.
     """
-    logger.info("[SearchAgent] Starting web search...")
+    logger.info("[SearchAgent] Starting web search for query: %r", state["query"])
 
     query = state["query"]
-
-    # Bind both search tools to the LLM
     tools = [duckduckgo_search, duckduckgo_news_search]
     llm_with_tools = llm.bind_tools(tools)
 
@@ -78,76 +80,63 @@ async def search_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, An
         HumanMessage(
             content=(
                 f"Research Query: {query}\n\n"
-                "Please search for comprehensive information on this topic. "
-                "Use multiple targeted searches to cover different aspects. "
-                "Retrieve both general web results and recent news."
+                "Search for comprehensive information on this topic using multiple "
+                "targeted sub-queries. Retrieve both general web results and recent news."
             )
         ),
     ]
 
     collected_results: list[str] = []
-    iteration = 0
 
     try:
-        while iteration < MAX_TOOL_ITERATIONS:
-            iteration += 1
-            logger.debug("[SearchAgent] Tool iteration %d/%d", iteration, MAX_TOOL_ITERATIONS)
+        for iteration in range(1, settings.MAX_TOOL_ITERATIONS + 1):
+            logger.debug("[SearchAgent] Tool iteration %d/%d", iteration, settings.MAX_TOOL_ITERATIONS)
 
             response = await llm_with_tools.ainvoke(messages)
             messages.append(response)
 
-            # Check if the LLM wants to call tools
             if not response.tool_calls:
-                # No more tool calls — LLM is done reasoning
+                # LLM finished reasoning — capture any final synthesis text
                 if response.content:
                     collected_results.append(str(response.content))
                 break
 
-            # Execute each requested tool call
             for tool_call in response.tool_calls:
                 tool_name: str = tool_call.get("name", "unknown")
                 tool_args: Dict[str, Any] = tool_call.get("args", {})
                 tool_id: str = tool_call.get("id", "")
 
-                logger.info(
-                    "[SearchAgent] Calling tool '%s' with args: %s",
-                    tool_name,
-                    tool_args,
-                )
+                logger.info("[SearchAgent] Tool call: %s(%s)", tool_name, tool_args)
 
                 if tool_name in TOOLS_BY_NAME:
                     result = TOOLS_BY_NAME[tool_name].invoke(tool_args)
                 else:
-                    result = f"Unknown tool: {tool_name}"
+                    result = f"Unknown tool requested: {tool_name!r}"
+                    logger.warning("[SearchAgent] %s", result)
 
                 collected_results.append(f"[{tool_name}({tool_args})]:\n{result}")
+                messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
 
-                # Feed tool result back into message history
-                messages.append(
-                    ToolMessage(content=str(result), tool_call_id=tool_id)
-                )
-
-        # Assemble final raw results blob
         raw_results = "\n\n".join(collected_results) if collected_results else "No results retrieved."
         final_output = f"=== WEB SEARCH RESULTS ===\nQuery: {query}\n\n{raw_results}"
 
         logger.info(
-            "[SearchAgent] Search complete. Result length: %d chars, iterations: %d",
+            "[SearchAgent] Complete — %d result blocks, %d chars",
+            len(collected_results),
             len(final_output),
-            iteration,
         )
 
         return {
             "search_results": final_output,
             "messages": [
-                f"[SearchAgent] Completed {iteration} tool iteration(s). "
-                f"Retrieved {len(collected_results)} result block(s)."
+                f"[SearchAgent] Retrieved {len(collected_results)} result block(s) "
+                f"across {iteration} iteration(s)."
             ],
         }
 
-    except Exception as e:
-        error_msg = f"Search agent error: {e}"
-        logger.error("[SearchAgent] %s", error_msg)
+    except Exception as exc:
+        error_msg = f"Search agent error: {exc}"
+        logger.error("[SearchAgent] %s", error_msg, exc_info=True)
         return {
             "search_results": f"Search failed: {error_msg}",
             "messages": [f"[SearchAgent] ERROR: {error_msg}"],

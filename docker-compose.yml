@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  research-assistant:
+    build: .
+    image: research-assistant:latest
+    env_file: .env
+    volumes:
+      - ./research_outputs:/app/research_outputs
+    # Override CMD to pass a custom query:
+    #   docker-compose run research-assistant "Your custom query"
