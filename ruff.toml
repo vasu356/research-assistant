@@ -1,8 +1,7 @@
-[tool.ruff]
 target-version = "py310"
 line-length = 100
 
-[tool.ruff.lint]
+[lint]
 select = [
     "E",    # pycodestyle errors
     "W",    # pycodestyle warnings
@@ -16,9 +15,9 @@ ignore = [
     "B008", # function calls in default arguments
 ]
 
-[tool.ruff.lint.isort]
+[lint.isort]
 known-first-party = ["agents", "config", "graph", "tools"]
 
-[tool.ruff.format]
+[format]
 quote-style = "double"
 indent-style = "space"
