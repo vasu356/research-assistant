@@ -2,16 +2,12 @@
 agents/summarizer.py
 ---------------------
 Summarizer Agent — converts raw search results into a structured markdown summary.
-
-Takes the verbose, unorganised output from the Search Agent and produces a
-well-organised markdown document with key findings, thematic sections,
-notable statistics, and source references.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
@@ -32,7 +28,7 @@ Your job is to transform raw, noisy web search results into a clean, structured,
 4. PRESERVE important details: numbers, dates, names, and source attributions.
 5. HIGHLIGHT the most important insights.
 
-## Output Format (always use this exact structure)
+## Output Format
 
 ### 📋 Summary: [Topic]
 
@@ -47,38 +43,29 @@ Your job is to transform raw, noisy web search results into a clean, structured,
 #### [Section 2 Title]
 [2–3 paragraphs on this aspect]
 
-#### [Section 3 Title — if needed]
-[2–3 paragraphs on this aspect]
-
 **Notable Data Points & Statistics:**
 - [List specific numbers, dates, statistics from sources]
 
 **Source References:**
 - [URL or source name] — [what it contributed]
 
----
-
 ## Rules
-- Be comprehensive but concise — depth over padding
+- Be comprehensive but concise
 - Do NOT invent information absent from the search results
-- Clearly note when something is speculative vs established fact
-- Use plain language; explain jargon when necessary
 - Always attribute specific claims to their sources
 """
 
 
-async def summarizer_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, Any]:
+async def summarizer_agent_node(state: ResearchState, llm: ChatGroq) -> dict[str, Any]:
     """
     Summarizer Agent node for LangGraph.
-
-    Reads raw search results from state and produces a structured markdown summary.
 
     Args:
         state: Current workflow state (must contain ``search_results``).
         llm:   Shared ChatGroq instance.
 
     Returns:
-        Partial state dict with ``summary`` (str) and an appended log message.
+        Partial state dict with ``summary`` and an appended log message.
         On failure, also sets ``error``.
     """
     logger.info("[SummarizerAgent] Starting summarization...")
@@ -106,7 +93,7 @@ async def summarizer_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str
         ]
 
         response = await llm.ainvoke(messages)
-        summary = response.content.strip()
+        summary = str(response.content).strip()
 
         logger.info("[SummarizerAgent] Summary generated — %d chars.", len(summary))
 

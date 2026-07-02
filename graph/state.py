@@ -13,7 +13,7 @@ Typical state progression through the workflow:
 from __future__ import annotations
 
 import operator
-from typing import Annotated, List, Optional
+from typing import Annotated
 
 from typing_extensions import TypedDict
 
@@ -37,15 +37,15 @@ class ResearchState(TypedDict):
     """
 
     query: str
-    search_results: Optional[str]
-    summary: Optional[str]
-    fact_check: Optional[str]
-    reflection_notes: Optional[str]
-    final_answer: Optional[str]
-    next_action: Optional[str]
+    search_results: str | None
+    summary: str | None
+    fact_check: str | None
+    reflection_notes: str | None
+    final_answer: str | None
+    next_action: str | None
     iteration_count: int
-    messages: Annotated[List[str], operator.add]
-    error: Optional[str]
+    messages: Annotated[list[str], operator.add]
+    error: str | None
 
 
 def initial_state(query: str) -> ResearchState:

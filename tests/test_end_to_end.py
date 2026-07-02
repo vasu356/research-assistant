@@ -11,9 +11,9 @@ Run:
     python tests/test_end_to_end.py
 """
 
-import sys
 import asyncio
 import json
+import sys
 import unittest
 from unittest.mock import MagicMock
 
@@ -30,113 +30,141 @@ from langchain_core.messages import AIMessage
 
 CANNED_RESPONSES = [
     # 1. Supervisor: no results yet → search
-    AIMessage(content=json.dumps({
-        "reasoning": "search_results is missing; must gather information first.",
-        "next_action": "search",
-        "rationale": "Need to retrieve information before anything else."
-    })),
+    AIMessage(
+        content=json.dumps(
+            {
+                "reasoning": "search_results is missing; must gather information first.",
+                "next_action": "search",
+                "rationale": "Need to retrieve information before anything else.",
+            }
+        )
+    ),
     # 2. Search agent iteration 1: tool call (web search)
     AIMessage(
         content="",
-        tool_calls=[{
-            "name": "duckduckgo_search",
-            "args": {"query": "LLM reasoning models 2025", "max_results": 4},
-            "id": "call_001",
-            "type": "tool_call",
-        }]
+        tool_calls=[
+            {
+                "name": "duckduckgo_search",
+                "args": {"query": "LLM reasoning models 2025", "max_results": 4},
+                "id": "call_001",
+                "type": "tool_call",
+            }
+        ],
     ),
     # 3. Search agent iteration 2: tool call (news search)
     AIMessage(
         content="",
-        tool_calls=[{
-            "name": "duckduckgo_news_search",
-            "args": {"query": "chain-of-thought vs o3 DeepSeek-R1", "max_results": 4},
-            "id": "call_002",
-            "type": "tool_call",
-        }]
+        tool_calls=[
+            {
+                "name": "duckduckgo_news_search",
+                "args": {"query": "chain-of-thought vs o3 DeepSeek-R1", "max_results": 4},
+                "id": "call_002",
+                "type": "tool_call",
+            }
+        ],
     ),
     # 4. Search agent: done reasoning
-    AIMessage(content=(
-        "=== WEB SEARCH RESULTS ===\n"
-        "In 2025, reasoning models such as OpenAI o3 and DeepSeek-R1 surpassed "
-        "traditional chain-of-thought prompting by internalising multi-step reasoning."
-    )),
+    AIMessage(
+        content=(
+            "=== WEB SEARCH RESULTS ===\n"
+            "In 2025, reasoning models such as OpenAI o3 and DeepSeek-R1 surpassed "
+            "traditional chain-of-thought prompting by internalising multi-step reasoning."
+        )
+    ),
     # 5. Supervisor: have search → summarize
-    AIMessage(content=json.dumps({
-        "reasoning": "search_results is present; summary is missing.",
-        "next_action": "summarize",
-        "rationale": "Raw results need to be structured into a clear summary."
-    })),
+    AIMessage(
+        content=json.dumps(
+            {
+                "reasoning": "search_results is present; summary is missing.",
+                "next_action": "summarize",
+                "rationale": "Raw results need to be structured into a clear summary.",
+            }
+        )
+    ),
     # 6. Summarizer
-    AIMessage(content=(
-        "### 📋 Summary: LLM Reasoning Models 2025\n\n"
-        "**Key Findings:**\n"
-        "- Reasoning models (o3, DeepSeek-R1) outperform standard CoT prompting\n"
-        "- These models internalise deliberation rather than exposing it\n"
-        "- Performance gains are largest on complex maths and coding tasks\n\n"
-        "**Detailed Analysis:**\n\n"
-        "#### Rise of Native Reasoning\n"
-        "Unlike chain-of-thought prompting, 2025 reasoning models embed extended "
-        "deliberation directly into the model architecture.\n\n"
-        "#### Comparison with CoT\n"
-        "Traditional CoT requires explicit step-by-step prompts; reasoning models "
-        "achieve this automatically with higher reliability.\n\n"
-        "**Source References:**\n"
-        "- duckduckgo_search — background context\n"
-        "- duckduckgo_news_search — 2025 updates"
-    )),
+    AIMessage(
+        content=(
+            "### 📋 Summary: LLM Reasoning Models 2025\n\n"
+            "**Key Findings:**\n"
+            "- Reasoning models (o3, DeepSeek-R1) outperform standard CoT prompting\n"
+            "- These models internalise deliberation rather than exposing it\n"
+            "- Performance gains are largest on complex maths and coding tasks\n\n"
+            "**Detailed Analysis:**\n\n"
+            "#### Rise of Native Reasoning\n"
+            "Unlike chain-of-thought prompting, 2025 reasoning models embed extended "
+            "deliberation directly into the model architecture.\n\n"
+            "#### Comparison with CoT\n"
+            "Traditional CoT requires explicit step-by-step prompts; reasoning models "
+            "achieve this automatically with higher reliability.\n\n"
+            "**Source References:**\n"
+            "- duckduckgo_search — background context\n"
+            "- duckduckgo_news_search — 2025 updates"
+        )
+    ),
     # 7. Supervisor: have summary → fact_check
-    AIMessage(content=json.dumps({
-        "reasoning": "summary present; fact_check missing.",
-        "next_action": "fact_check",
-        "rationale": "Validate claims before composing the final answer."
-    })),
+    AIMessage(
+        content=json.dumps(
+            {
+                "reasoning": "summary present; fact_check missing.",
+                "next_action": "fact_check",
+                "rationale": "Validate claims before composing the final answer.",
+            }
+        )
+    ),
     # 8. Fact checker
-    AIMessage(content=(
-        "### 🔍 Fact-Check Report\n\n"
-        "**Overall Assessment:** Claims are well-supported by the search results.\n\n"
-        "**Claim-by-Claim Analysis:**\n\n"
-        "| Claim | Confidence | Notes |\n"
-        "|-------|-----------|-------|\n"
-        "| Reasoning models outperform CoT | ✅ HIGH | Multiple sources confirm |\n"
-        "| o3 and DeepSeek-R1 lead in 2025 | ✅ HIGH | Corroborated by news search |\n"
-        "| Gains largest on maths/coding | ⚠️ MEDIUM | Plausible, weaker sourcing |\n\n"
-        "**Recommendations:** Qualify the maths/coding claim with 'reportedly'."
-    )),
+    AIMessage(
+        content=(
+            "### 🔍 Fact-Check Report\n\n"
+            "**Overall Assessment:** Claims are well-supported by the search results.\n\n"
+            "**Claim-by-Claim Analysis:**\n\n"
+            "| Claim | Confidence | Notes |\n"
+            "|-------|-----------|-------|\n"
+            "| Reasoning models outperform CoT | ✅ HIGH | Multiple sources confirm |\n"
+            "| o3 and DeepSeek-R1 lead in 2025 | ✅ HIGH | Corroborated by news search |\n"
+            "| Gains largest on maths/coding | ⚠️ MEDIUM | Plausible, weaker sourcing |\n\n"
+            "**Recommendations:** Qualify the maths/coding claim with 'reportedly'."
+        )
+    ),
     # 9. Supervisor: all three components → reflect
-    AIMessage(content=json.dumps({
-        "reasoning": "search_results, summary, and fact_check all present.",
-        "next_action": "reflect",
-        "rationale": "All components assembled; time to synthesise the final answer."
-    })),
+    AIMessage(
+        content=json.dumps(
+            {
+                "reasoning": "search_results, summary, and fact_check all present.",
+                "next_action": "reflect",
+                "rationale": "All components assembled; time to synthesise the final answer.",
+            }
+        )
+    ),
     # 10. Reflect node
-    AIMessage(content=(
-        "### 🎯 Final Research Answer\n\n"
-        "**Executive Summary:**\n"
-        "In 2025, LLM reasoning models such as OpenAI o3, DeepSeek-R1, and "
-        "Google Gemini 2.0 Thinking represent a fundamental shift from "
-        "prompting-based chain-of-thought techniques. These models embed "
-        "deliberation internally rather than exposing it in the output stream.\n\n"
-        "**Detailed Findings:**\n"
-        "Traditional chain-of-thought prompting asks the model to 'think step by "
-        "step', surfacing intermediate reasoning as text. Reasoning models instead "
-        "run an internal 'thinking' process invisible to the user, producing more "
-        "reliable answers, especially on complex problems.\n\n"
-        "**Key Comparisons:**\n"
-        "CoT prompting is explicit and tunable; reasoning models are automatic but "
-        "less transparent. Both benefit from longer compute budgets.\n\n"
-        "**Confidence Assessment:** HIGH — findings corroborated by multiple sources.\n\n"
-        "**Limitations:** Rapidly evolving field; some benchmarks are contested.\n\n"
-        "---\n\n"
-        "### 🔄 Self-Reflection\n\n"
-        "**Quality Assessment:**\n"
-        "- Coverage: The answer addresses both 'latest developments' and the "
-        "comparison with chain-of-thought.\n"
-        "- Accuracy: All high-confidence claims retained; medium-confidence claim "
-        "appropriately qualified.\n"
-        "- Depth: Sufficient for a research summary.\n\n"
-        "**Verdict:** COMPLETE — answer is ready"
-    )),
+    AIMessage(
+        content=(
+            "### 🎯 Final Research Answer\n\n"
+            "**Executive Summary:**\n"
+            "In 2025, LLM reasoning models such as OpenAI o3, DeepSeek-R1, and "
+            "Google Gemini 2.0 Thinking represent a fundamental shift from "
+            "prompting-based chain-of-thought techniques. These models embed "
+            "deliberation internally rather than exposing it in the output stream.\n\n"
+            "**Detailed Findings:**\n"
+            "Traditional chain-of-thought prompting asks the model to 'think step by "
+            "step', surfacing intermediate reasoning as text. Reasoning models instead "
+            "run an internal 'thinking' process invisible to the user, producing more "
+            "reliable answers, especially on complex problems.\n\n"
+            "**Key Comparisons:**\n"
+            "CoT prompting is explicit and tunable; reasoning models are automatic but "
+            "less transparent. Both benefit from longer compute budgets.\n\n"
+            "**Confidence Assessment:** HIGH — findings corroborated by multiple sources.\n\n"
+            "**Limitations:** Rapidly evolving field; some benchmarks are contested.\n\n"
+            "---\n\n"
+            "### 🔄 Self-Reflection\n\n"
+            "**Quality Assessment:**\n"
+            "- Coverage: The answer addresses both 'latest developments' and the "
+            "comparison with chain-of-thought.\n"
+            "- Accuracy: All high-confidence claims retained; medium-confidence claim "
+            "appropriately qualified.\n"
+            "- Depth: Sufficient for a research summary.\n\n"
+            "**Verdict:** COMPLETE — answer is ready"
+        )
+    ),
 ]
 
 
@@ -147,11 +175,15 @@ def make_mock_llm() -> MagicMock:
     After the canned list is exhausted, returns a safe 'finish' response.
     """
     call_idx = [0]
-    fallback = AIMessage(content=json.dumps({
-        "reasoning": "All done.",
-        "next_action": "finish",
-        "rationale": "Workflow complete.",
-    }))
+    fallback = AIMessage(
+        content=json.dumps(
+            {
+                "reasoning": "All done.",
+                "next_action": "finish",
+                "rationale": "Workflow complete.",
+            }
+        )
+    )
 
     async def fake_ainvoke(messages, *args, **kwargs):
         i = call_idx[0]
@@ -168,6 +200,7 @@ def make_mock_tools() -> dict:
     """
     Build mock tool callables that return fixed strings without network access.
     """
+
     def web_result(args):
         return f"[MOCK WEB] Results for: {args.get('query', 'unknown')}"
 
@@ -182,11 +215,13 @@ def make_mock_tools() -> dict:
 
 # ── Unit Tests ────────────────────────────────────────────────────────────────
 
+
 class TestStateSchema(unittest.TestCase):
     """Tests for graph/state.py"""
 
     def test_initial_state_fields(self):
         from graph.state import initial_state
+
         state = initial_state("test query")
         self.assertEqual(state["query"], "test query")
         self.assertIsNone(state["search_results"])
@@ -203,6 +238,7 @@ class TestStateSchema(unittest.TestCase):
 
     def test_initial_state_message_contains_query(self):
         from graph.state import initial_state
+
         state = initial_state("hello world")
         self.assertTrue(any("hello world" in m for m in state["messages"]))
 
@@ -212,6 +248,7 @@ class TestSearchTools(unittest.TestCase):
 
     def test_tools_registry_populated(self):
         from tools.search_tools import AVAILABLE_TOOLS, TOOLS_BY_NAME
+
         self.assertIn("duckduckgo_search", TOOLS_BY_NAME)
         self.assertIn("duckduckgo_news_search", TOOLS_BY_NAME)
         self.assertEqual(len(AVAILABLE_TOOLS), 2)
@@ -219,12 +256,14 @@ class TestSearchTools(unittest.TestCase):
     def test_search_tool_handles_error_gracefully(self):
         """Tool must return a string even when network fails."""
         from tools.search_tools import duckduckgo_search
+
         result = duckduckgo_search.invoke({"query": "completely_unreachable_xyz_abc_123"})
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
 
     def test_news_tool_handles_error_gracefully(self):
         from tools.search_tools import duckduckgo_news_search
+
         result = duckduckgo_news_search.invoke({"query": "completely_unreachable_xyz_abc_123"})
         self.assertIsInstance(result, str)
         self.assertGreater(len(result), 0)
@@ -238,11 +277,11 @@ class TestSupervisorRouting(unittest.TestCase):
         from graph.state import initial_state
 
         cases = {
-            "search":      "search_agent",
-            "summarize":   "summarizer_agent",
-            "fact_check":  "fact_checker_agent",
-            "reflect":     "reflect",
-            "finish":      "__end__",
+            "search": "search_agent",
+            "summarize": "summarizer_agent",
+            "fact_check": "fact_checker_agent",
+            "reflect": "reflect",
+            "finish": "__end__",
             "unknown_val": "__end__",
         }
         for action, expected in cases.items():
@@ -254,6 +293,7 @@ class TestSupervisorRouting(unittest.TestCase):
     def test_route_after_reflection_complete(self):
         from agents.supervisor import route_after_reflection
         from graph.state import initial_state
+
         state = initial_state("q")
         state["next_action"] = "finish"
         state["iteration_count"] = 2
@@ -262,17 +302,19 @@ class TestSupervisorRouting(unittest.TestCase):
     def test_route_after_reflection_needs_improvement_under_limit(self):
         from agents.supervisor import route_after_reflection
         from graph.state import initial_state
+
         state = initial_state("q")
         state["next_action"] = "search"
-        state["iteration_count"] = 2   # below 6
+        state["iteration_count"] = 2  # below 6
         self.assertEqual(route_after_reflection(state), "search_agent")
 
     def test_route_after_reflection_maxed_out(self):
         from agents.supervisor import route_after_reflection
         from graph.state import initial_state
+
         state = initial_state("q")
         state["next_action"] = "search"
-        state["iteration_count"] = 7   # above 6 — must stop
+        state["iteration_count"] = 7  # above 6 — must stop
         self.assertEqual(route_after_reflection(state), "__end__")
 
     def test_heuristic_next_action_progression(self):
@@ -297,6 +339,7 @@ class TestSupervisorRouting(unittest.TestCase):
     def test_build_state_summary_shows_missing(self):
         from agents.supervisor import _build_state_summary
         from graph.state import initial_state
+
         s = initial_state("q")
         summary = _build_state_summary(s)
         self.assertIn("missing", summary)
@@ -304,6 +347,7 @@ class TestSupervisorRouting(unittest.TestCase):
     def test_build_state_summary_shows_present(self):
         from agents.supervisor import _build_state_summary
         from graph.state import initial_state
+
         s = initial_state("q")
         s["search_results"] = "x" * 100
         summary = _build_state_summary(s)
@@ -315,8 +359,10 @@ class TestWorkflowGraph(unittest.TestCase):
 
     def setUp(self):
         import os
+
         os.environ["GROQ_API_KEY"] = "test_key_for_graph_build_only"
         from langchain_groq import ChatGroq
+
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             temperature=0.1,
@@ -326,27 +372,36 @@ class TestWorkflowGraph(unittest.TestCase):
 
     def test_graph_compiles(self):
         from graph.workflow import build_workflow
+
         wf = build_workflow(self.llm)
         self.assertIsNotNone(wf)
 
     def test_graph_has_all_nodes(self):
         from graph.workflow import build_workflow
+
         wf = build_workflow(self.llm)
         nodes = list(wf.get_graph().nodes.keys())
         for expected in [
-            "__start__", "supervisor_decision", "search_agent",
-            "summarizer_agent", "fact_checker_agent", "reflect", "__end__"
+            "__start__",
+            "supervisor_decision",
+            "search_agent",
+            "summarizer_agent",
+            "fact_checker_agent",
+            "reflect",
+            "__end__",
         ]:
             self.assertIn(expected, nodes, f"Missing node: {expected}")
 
     def test_graph_has_correct_edge_count(self):
         from graph.workflow import build_workflow
+
         wf = build_workflow(self.llm)
         edges = list(wf.get_graph().edges)
         self.assertGreaterEqual(len(edges), 8)
 
 
 # ── Integration Tests (async) ─────────────────────────────────────────────────
+
 
 class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
     """
@@ -357,6 +412,7 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         """Set up mock tools before each test."""
         from tools import search_tools as st
+
         self._original_tools = {k: v for k, v in st.TOOLS_BY_NAME.items()}
         mock_fns = make_mock_tools()
         for name, fn in mock_fns.items():
@@ -367,11 +423,13 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         """Restore real tools after each test."""
         from tools import search_tools as st
+
         st.TOOLS_BY_NAME.update(self._original_tools)
 
     async def _run_workflow(self) -> dict:
         from graph.state import initial_state
         from graph.workflow import build_workflow
+
         state = initial_state(
             "What are the latest developments in LLM reasoning models in 2025 "
             "and how do they compare to traditional chain-of-thought approaches?"
@@ -382,10 +440,10 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
     async def test_all_state_fields_populated(self):
         """Every output field must be non-None after a full run."""
         final = await self._run_workflow()
-        self.assertIsNotNone(final.get("search_results"),   "search_results")
-        self.assertIsNotNone(final.get("summary"),          "summary")
-        self.assertIsNotNone(final.get("fact_check"),       "fact_check")
-        self.assertIsNotNone(final.get("final_answer"),     "final_answer")
+        self.assertIsNotNone(final.get("search_results"), "search_results")
+        self.assertIsNotNone(final.get("summary"), "summary")
+        self.assertIsNotNone(final.get("fact_check"), "fact_check")
+        self.assertIsNotNone(final.get("final_answer"), "final_answer")
         self.assertIsNotNone(final.get("reflection_notes"), "reflection_notes")
 
     async def test_no_errors(self):
@@ -399,10 +457,10 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
         msgs = final.get("messages", [])
         self.assertGreaterEqual(len(msgs), 6, f"Got only {len(msgs)} messages: {msgs}")
         combined = "\n".join(msgs)
-        self.assertIn("SearchAgent",       combined, "Search agent message missing")
-        self.assertIn("SummarizerAgent",   combined, "Summarizer message missing")
-        self.assertIn("FactCheckerAgent",  combined, "Fact checker message missing")
-        self.assertIn("Supervisor",        combined, "Supervisor message missing")
+        self.assertIn("SearchAgent", combined, "Search agent message missing")
+        self.assertIn("SummarizerAgent", combined, "Summarizer message missing")
+        self.assertIn("FactCheckerAgent", combined, "Fact checker message missing")
+        self.assertIn("Supervisor", combined, "Supervisor message missing")
 
     async def test_iteration_count_incremented(self):
         """iteration_count must increase from 0."""
@@ -418,7 +476,7 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
         """Summary must contain Key Findings and Detailed Analysis sections."""
         final = await self._run_workflow()
         summary = final.get("summary", "")
-        self.assertIn("Key Findings",     summary)
+        self.assertIn("Key Findings", summary)
         self.assertIn("Detailed Analysis", summary)
 
     async def test_fact_check_has_table(self):
@@ -447,8 +505,8 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
         from graph.state import initial_state
         from graph.workflow import build_workflow
 
-        state      = initial_state("test ordering query")
-        wf         = build_workflow(make_mock_llm())
+        state = initial_state("test ordering query")
+        wf = build_workflow(make_mock_llm())
         node_order = []
 
         async for chunk in wf.astream(state, stream_mode="updates"):
@@ -458,15 +516,15 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
             return next(i for i, n in enumerate(node_order) if n == name)
 
         self.assertIn("supervisor_decision", node_order)
-        self.assertIn("search_agent",        node_order)
-        self.assertIn("summarizer_agent",    node_order)
-        self.assertIn("fact_checker_agent",  node_order)
-        self.assertIn("reflect",             node_order)
+        self.assertIn("search_agent", node_order)
+        self.assertIn("summarizer_agent", node_order)
+        self.assertIn("fact_checker_agent", node_order)
+        self.assertIn("reflect", node_order)
 
         self.assertLess(first("supervisor_decision"), first("search_agent"))
-        self.assertLess(first("search_agent"),        first("summarizer_agent"))
-        self.assertLess(first("summarizer_agent"),    first("fact_checker_agent"))
-        self.assertLess(first("fact_checker_agent"),  first("reflect"))
+        self.assertLess(first("search_agent"), first("summarizer_agent"))
+        self.assertLess(first("summarizer_agent"), first("fact_checker_agent"))
+        self.assertLess(first("fact_checker_agent"), first("reflect"))
 
     async def test_max_iteration_guard(self):
         """
@@ -487,11 +545,15 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
             # Alternate: supervisor decisions and search agent completions
             if call_count[0] % 2 == 1:
                 # Supervisor call → always search
-                return AIMessage(content=json.dumps({
-                    "reasoning": "always search",
-                    "next_action": "search",
-                    "rationale": "keep searching"
-                }))
+                return AIMessage(
+                    content=json.dumps(
+                        {
+                            "reasoning": "always search",
+                            "next_action": "search",
+                            "rationale": "keep searching",
+                        }
+                    )
+                )
             else:
                 # Search agent call → no tool calls, return text
                 return AIMessage(content="Mock search results for infinite loop test.")
@@ -510,11 +572,13 @@ class TestEndToEndWorkflow(unittest.IsolatedAsyncioTestCase):
 
 # ── Individual Agent Unit Tests ───────────────────────────────────────────────
 
+
 class TestSearchAgentNode(unittest.IsolatedAsyncioTestCase):
     """Tests for agents/search_agent.py"""
 
     async def asyncSetUp(self):
         from tools import search_tools as st
+
         self._orig = dict(st.TOOLS_BY_NAME)
         for name in st.TOOLS_BY_NAME:
             mk = MagicMock()
@@ -523,6 +587,7 @@ class TestSearchAgentNode(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         from tools import search_tools as st
+
         st.TOOLS_BY_NAME.update(self._orig)
 
     async def test_search_agent_returns_results(self):
@@ -535,7 +600,7 @@ class TestSearchAgentNode(unittest.IsolatedAsyncioTestCase):
             return_value=AIMessage(content="Here are the search results I found.")
         )
 
-        state  = initial_state("test query for search")
+        state = initial_state("test query for search")
         result = await search_agent_node(state, llm)
 
         self.assertIn("search_results", result)
@@ -554,7 +619,7 @@ class TestSearchAgentNode(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("Simulated LLM failure")
 
         llm.ainvoke = raise_error
-        state  = initial_state("error test")
+        state = initial_state("error test")
         result = await search_agent_node(state, llm)
 
         self.assertIn("search_results", result)
@@ -571,7 +636,9 @@ class TestSummarizerAgentNode(unittest.IsolatedAsyncioTestCase):
 
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
-            return_value=AIMessage(content="### 📋 Summary\n**Key Findings:**\n- Finding 1\n**Detailed Analysis:**\nDetail here.")
+            return_value=AIMessage(
+                content="### 📋 Summary\n**Key Findings:**\n- Finding 1\n**Detailed Analysis:**\nDetail here."
+            )
         )
 
         state = initial_state("test")
@@ -585,8 +652,8 @@ class TestSummarizerAgentNode(unittest.IsolatedAsyncioTestCase):
         from agents.summarizer import summarizer_agent_node
         from graph.state import initial_state
 
-        llm    = MagicMock()
-        state  = initial_state("test")
+        llm = MagicMock()
+        state = initial_state("test")
         # search_results is None — summarizer should skip gracefully
         result = await summarizer_agent_node(state, llm)
 
@@ -598,8 +665,10 @@ class TestSummarizerAgentNode(unittest.IsolatedAsyncioTestCase):
         from graph.state import initial_state
 
         llm = MagicMock()
+
         async def raise_error(msgs, *a, **kw):
             raise RuntimeError("LLM down")
+
         llm.ainvoke = raise_error
 
         state = initial_state("test")
@@ -619,11 +688,13 @@ class TestFactCheckerAgentNode(unittest.IsolatedAsyncioTestCase):
 
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
-            return_value=AIMessage(content="### 🔍 Fact-Check Report\n| Claim | ✅ HIGH | Supported |")
+            return_value=AIMessage(
+                content="### 🔍 Fact-Check Report\n| Claim | ✅ HIGH | Supported |"
+            )
         )
 
         state = initial_state("test")
-        state["summary"]        = "Some summary content."
+        state["summary"] = "Some summary content."
         state["search_results"] = "Some raw results."
         result = await fact_checker_agent_node(state, llm)
 
@@ -634,7 +705,7 @@ class TestFactCheckerAgentNode(unittest.IsolatedAsyncioTestCase):
         from agents.fact_checker import fact_checker_agent_node
         from graph.state import initial_state
 
-        llm   = MagicMock()
+        llm = MagicMock()
         state = initial_state("test")
         result = await fact_checker_agent_node(state, llm)
 
@@ -651,14 +722,18 @@ class TestSupervisorNodes(unittest.IsolatedAsyncioTestCase):
 
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
-            return_value=AIMessage(content=json.dumps({
-                "reasoning": "search missing",
-                "next_action": "search",
-                "rationale": "need to search"
-            }))
+            return_value=AIMessage(
+                content=json.dumps(
+                    {
+                        "reasoning": "search missing",
+                        "next_action": "search",
+                        "rationale": "need to search",
+                    }
+                )
+            )
         )
 
-        state  = initial_state("test")
+        state = initial_state("test")
         result = await supervisor_decision_node(state, llm)
 
         self.assertEqual(result["next_action"], "search")
@@ -668,9 +743,9 @@ class TestSupervisorNodes(unittest.IsolatedAsyncioTestCase):
         from agents.supervisor import supervisor_decision_node
         from graph.state import initial_state
 
-        llm   = MagicMock()  # should not be called
+        llm = MagicMock()  # should not be called
         state = initial_state("test")
-        state["iteration_count"] = 6   # at max
+        state["iteration_count"] = 6  # at max
 
         result = await supervisor_decision_node(state, llm)
         self.assertEqual(result["next_action"], "finish")
@@ -681,15 +756,15 @@ class TestSupervisorNodes(unittest.IsolatedAsyncioTestCase):
         from graph.state import initial_state
 
         llm = MagicMock()
-        llm.ainvoke = AsyncMock(
-            return_value=AIMessage(content="this is not json at all {{{}}")
-        )
+        llm.ainvoke = AsyncMock(return_value=AIMessage(content="this is not json at all {{{}}"))
 
-        state  = initial_state("test")
+        state = initial_state("test")
         result = await supervisor_decision_node(state, llm)
 
         # Must still return a valid next_action via heuristic
-        self.assertIn(result["next_action"], ["search", "summarize", "fact_check", "reflect", "finish"])
+        self.assertIn(
+            result["next_action"], ["search", "summarize", "fact_check", "reflect", "finish"]
+        )
 
     async def test_reflect_node_splits_answer_from_reflection(self):
         from agents.supervisor import supervisor_reflect_node
@@ -697,23 +772,25 @@ class TestSupervisorNodes(unittest.IsolatedAsyncioTestCase):
 
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
-            return_value=AIMessage(content=(
-                "### 🎯 Final Research Answer\n\nThe answer is X.\n\n---\n\n"
-                "### 🔄 Self-Reflection\n\n**Verdict:** COMPLETE — answer is ready"
-            ))
+            return_value=AIMessage(
+                content=(
+                    "### 🎯 Final Research Answer\n\nThe answer is X.\n\n---\n\n"
+                    "### 🔄 Self-Reflection\n\n**Verdict:** COMPLETE — answer is ready"
+                )
+            )
         )
 
-        state                  = initial_state("test")
+        state = initial_state("test")
         state["search_results"] = "results"
-        state["summary"]        = "summary"
-        state["fact_check"]     = "fact check"
+        state["summary"] = "summary"
+        state["fact_check"] = "fact check"
 
         result = await supervisor_reflect_node(state, llm)
 
-        self.assertIn("final_answer",     result)
+        self.assertIn("final_answer", result)
         self.assertIn("reflection_notes", result)
         self.assertIn("Final Research Answer", result["final_answer"])
-        self.assertIn("Self-Reflection",       result["reflection_notes"])
+        self.assertIn("Self-Reflection", result["reflection_notes"])
         self.assertEqual(result["next_action"], "finish")
 
     async def test_reflect_node_handles_missing_reflection_block(self):
@@ -727,19 +804,21 @@ class TestSupervisorNodes(unittest.IsolatedAsyncioTestCase):
 
         state = initial_state("test")
         state["search_results"] = "r"
-        state["summary"]        = "s"
-        state["fact_check"]     = "f"
+        state["summary"] = "s"
+        state["fact_check"] = "f"
 
         result = await supervisor_reflect_node(state, llm)
-        self.assertIn("final_answer",     result)
+        self.assertIn("final_answer", result)
         self.assertIn("reflection_notes", result)
         self.assertEqual(result["next_action"], "finish")
 
 
 # ── Helper: AsyncMock for Python 3.7 compatibility ───────────────────────────
 
+
 class AsyncMock(MagicMock):
     """Simple AsyncMock for environments without unittest.mock.AsyncMock."""
+
     async def __call__(self, *args, **kwargs):
         return super().__call__(*args, **kwargs)
 
@@ -751,8 +830,8 @@ if __name__ == "__main__":
     print("  🧪  MULTI-AGENT RESEARCH ASSISTANT — FULL TEST SUITE")
     print("=" * 70 + "\n")
 
-    loader  = unittest.TestLoader()
-    suite   = unittest.TestSuite()
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
 
     test_classes = [
         TestStateSchema,
@@ -776,8 +855,10 @@ if __name__ == "__main__":
     if result.wasSuccessful():
         print(f"  🎉  ALL {result.testsRun} TESTS PASSED")
     else:
-        print(f"  ❌  {len(result.failures)} failure(s), {len(result.errors)} error(s) "
-              f"out of {result.testsRun} tests")
+        print(
+            f"  ❌  {len(result.failures)} failure(s), {len(result.errors)} error(s) "
+            f"out of {result.testsRun} tests"
+        )
     print("=" * 70 + "\n")
 
     sys.exit(0 if result.wasSuccessful() else 1)

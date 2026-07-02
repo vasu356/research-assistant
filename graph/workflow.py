@@ -2,33 +2,12 @@
 graph/workflow.py
 -----------------
 LangGraph workflow definition for the multi-agent research assistant.
-
-Defines all graph nodes, conditional edges, and the compiled StateGraph.
-The graph implements a supervisor-driven hierarchical delegation pattern:
-
-                    [START]
-                       │
-                       ▼
-              [supervisor_decision]  ◄──────────────────────────┐
-              ┌─────────┼──────────┐                            │
-              │         │          │                            │
-              ▼         ▼          ▼                            │
-       [search]  [summarize]  [fact_check]                      │
-              │         │          │                            │
-              └─────────┼──────────┘                            │
-                       │                                        │
-                       ▼ "reflect"                              │
-                 [self-reflection] ── "NEEDS_IMPROVEMENT" ──────┘
-                       │
-                       ▼ "COMPLETE"
-                     [END]
 """
 
 from __future__ import annotations
 
 import functools
 import logging
-import os
 from typing import Any
 
 from langchain_groq import ChatGroq
@@ -51,10 +30,7 @@ logger = logging.getLogger(__name__)
 
 def build_workflow(llm: ChatGroq) -> Any:
     """
-    Construct and compile the LangGraph StateGraph for the research assistant.
-
-    Uses functools.partial to inject the shared LLM instance into each node
-    function (LangGraph nodes must be single-argument callables accepting state).
+    Construct and compile the LangGraph StateGraph.
 
     Args:
         llm: A configured ChatGroq instance shared across all agents.
@@ -66,24 +42,14 @@ def build_workflow(llm: ChatGroq) -> Any:
 
     graph = StateGraph(ResearchState)
 
-    # Wrap each async node with the shared LLM via partial application
-    supervisor_decide = functools.partial(supervisor_decision_node, llm=llm)
-    supervisor_reflect = functools.partial(supervisor_reflect_node, llm=llm)
-    search_node = functools.partial(search_agent_node, llm=llm)
-    summarizer_node = functools.partial(summarizer_agent_node, llm=llm)
-    fact_checker_node = functools.partial(fact_checker_agent_node, llm=llm)
+    graph.add_node("supervisor_decision", functools.partial(supervisor_decision_node, llm=llm))
+    graph.add_node("reflect", functools.partial(supervisor_reflect_node, llm=llm))
+    graph.add_node("search_agent", functools.partial(search_agent_node, llm=llm))
+    graph.add_node("summarizer_agent", functools.partial(summarizer_agent_node, llm=llm))
+    graph.add_node("fact_checker_agent", functools.partial(fact_checker_agent_node, llm=llm))
 
-    # Register nodes
-    graph.add_node("supervisor_decision", supervisor_decide)
-    graph.add_node("search_agent", search_node)
-    graph.add_node("summarizer_agent", summarizer_node)
-    graph.add_node("fact_checker_agent", fact_checker_node)
-    graph.add_node("reflect", supervisor_reflect)
-
-    # Entry point
     graph.set_entry_point("supervisor_decision")
 
-    # Conditional edges from supervisor_decision
     graph.add_conditional_edges(
         "supervisor_decision",
         route_after_decision,
@@ -96,12 +62,10 @@ def build_workflow(llm: ChatGroq) -> Any:
         },
     )
 
-    # After each worker, return to supervisor for re-evaluation
     graph.add_edge("search_agent", "supervisor_decision")
     graph.add_edge("summarizer_agent", "supervisor_decision")
     graph.add_edge("fact_checker_agent", "supervisor_decision")
 
-    # Conditional edge from reflect: COMPLETE → END, NEEDS_IMPROVEMENT → loop
     graph.add_conditional_edges(
         "reflect",
         route_after_reflection,
@@ -125,21 +89,17 @@ def get_llm(
     """
     Create a configured ChatGroq LLM instance from centralised settings.
 
-    All parameters fall back to values from ``config.settings``, which in
-    turn read from environment variables.  Pass explicit arguments only
-    when you need to override for testing.
-
     Args:
         model:       Groq model name (default: settings.GROQ_MODEL).
         temperature: Sampling temperature (default: settings.GROQ_TEMPERATURE).
-        max_retries: Retry count for failed requests (default: settings.GROQ_MAX_RETRIES).
+        max_retries: Retry count (default: settings.GROQ_MAX_RETRIES).
         timeout:     Request timeout in seconds (default: settings.GROQ_TIMEOUT).
 
     Returns:
         A configured ChatGroq instance.
 
     Raises:
-        EnvironmentError: If GROQ_API_KEY is not configured.
+        OSError: If GROQ_API_KEY is not configured.
     """
     settings.validate()
 

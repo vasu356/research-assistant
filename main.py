@@ -3,12 +3,6 @@ main.py
 -------
 Entry point for the Multi-Agent Research Assistant.
 
-Orchestrates a supervisor-driven multi-agent workflow that:
-  1. Searches the web for relevant information  (Search Agent)
-  2. Structures raw results into a coherent summary  (Summarizer Agent)
-  3. Validates claims and flags uncertainties  (Fact Checker Agent)
-  4. Synthesises a final answer with self-reflection  (Supervisor Agent)
-
 Usage:
     python main.py
     python main.py "Your custom research query here"
@@ -17,22 +11,25 @@ Usage:
 
 from __future__ import annotations
 
+# NOTE: load_dotenv() must run before any config imports so env vars are
+# available when settings.py is first evaluated. The E402 noqa comments
+# silence ruff's "module-level import not at top" warning which is
+# unavoidable here by design.
 import asyncio
 import logging
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from dotenv import load_dotenv
 
-# Load .env before any imports that read environment variables
 load_dotenv()
 
-from config import settings
-from graph.state import ResearchState, initial_state
-from graph.workflow import build_workflow, get_llm
+from config import settings  # noqa: E402
+from graph.state import ResearchState, initial_state  # noqa: E402
+from graph.workflow import build_workflow, get_llm  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -103,7 +100,7 @@ def print_section(title: str, content: str) -> None:
     print(content)
 
 
-def merge_state_update(state: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
+def merge_state_update(state: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     """Merge a partial LangGraph node update into the accumulated full state."""
     merged = dict(state)
     for key, value in update.items():
@@ -129,7 +126,7 @@ def _sanitize_filename(text: str, max_length: int = 50) -> str:
     return safe.strip().replace(" ", "_")[:max_length]
 
 
-def save_results_to_markdown(state: Dict[str, Any], query: str) -> Path:
+def save_results_to_markdown(state: dict[str, Any], query: str) -> Path:
     """
     Persist all research outputs to a timestamped markdown file.
 
@@ -145,7 +142,7 @@ def save_results_to_markdown(state: Dict[str, Any], query: str) -> Path:
     output_path = settings.OUTPUT_DIR / f"research_{timestamp}_{safe_query}.md"
     settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    sections: List[str] = [
+    sections: list[str] = [
         "# Research Results\n",
         f"**Query:** {query}\n",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
@@ -182,12 +179,9 @@ def save_results_to_markdown(state: Dict[str, Any], query: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-async def run_research(query: str) -> Dict[str, Any]:
+async def run_research(query: str) -> dict[str, Any]:
     """
     Execute the full multi-agent research pipeline for a given query.
-
-    Streams live agent progress messages as the graph executes, then
-    returns the fully-merged final state.
 
     Args:
         query: The research question to investigate.
@@ -204,7 +198,7 @@ async def run_research(query: str) -> Dict[str, Any]:
     llm = get_llm()
     workflow = build_workflow(llm)
     state: ResearchState = initial_state(query)
-    final_state: Dict[str, Any] = dict(state)
+    final_state: dict[str, Any] = dict(state)
 
     start_time = time.perf_counter()
     logger.info("Workflow execution started.")
@@ -213,7 +207,7 @@ async def run_research(query: str) -> Dict[str, Any]:
     await spinner.start()
 
     async for chunk in workflow.astream(state, stream_mode="updates"):
-        for node_name, node_output in chunk.items():
+        for _node_name, node_output in chunk.items():
             elapsed = time.perf_counter() - start_time
             for msg in node_output.get("messages", []):
                 print(f"\r  [{elapsed:5.1f}s] {msg}")
@@ -231,13 +225,13 @@ async def run_research(query: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def display_results(state: Dict[str, Any], query: str) -> None:
+def display_results(state: dict[str, Any], query: str) -> None:
     """
     Print all research outputs to stdout and save a markdown export.
 
     Args:
         state: Final workflow state dict.
-        query: Original research query (used for export filename).
+        query: Original research query.
     """
     print(f"\n\n{'RESEARCH COMPLETE':^80}")
 
@@ -281,8 +275,7 @@ async def main() -> None:
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")
         sys.exit(0)
-    except EnvironmentError as exc:
-        # Config validation failure (missing API key)
+    except OSError as exc:
         print(f"\n\u274c CONFIG ERROR: {exc}")
         sys.exit(1)
     except Exception as exc:

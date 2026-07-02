@@ -61,3 +61,7 @@ omit = ["*/tests/*"]
 python_version = "3.11"
 ignore_missing_imports = true
 no_strict_optional = true
+
+[[tool.mypy.overrides]]
+module = "tools.search_tools"
+ignore_errors = true

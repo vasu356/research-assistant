@@ -7,16 +7,13 @@ Implements the ReAct (Reason + Act) pattern:
   1. REASON  — The LLM analyses the query and plans targeted sub-searches.
   2. ACT     — It calls DuckDuckGo tools with focused queries.
   3. OBSERVE — It reviews tool results and decides if more searches are needed.
-  4. DONE    — When satisfied, it stops the loop and returns consolidated results.
-
-The agent autonomously decides how many searches to run (up to MAX_TOOL_ITERATIONS)
-without any hard-coded query logic — all search strategy emerges from the LLM.
+  4. DONE    — When satisfied, it stops and returns consolidated results.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
@@ -39,34 +36,25 @@ Your ONLY job is to search the web and retrieve relevant, high-quality informati
 4. SYNTHESIZE — Return ALL raw information as a single labelled block.
 
 ## Search Guidelines
-- Break complex queries into focused sub-searches (e.g. "LLM reasoning 2025" + "chain-of-thought vs reasoning models benchmarks")
+- Break complex queries into focused sub-searches
 - Prefer recent sources — append the current year to time-sensitive queries
 - Use both web search and news search for comprehensive coverage
-- Return ALL raw information without heavy filtering; the Summarizer will structure it
 
 ## Output Format
 Begin with "=== WEB SEARCH RESULTS ===" then list every retrieved item with source labels.
 """
 
 
-async def search_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, Any]:
+async def search_agent_node(state: ResearchState, llm: ChatGroq) -> dict[str, Any]:
     """
     Web Search Agent node for LangGraph.
-
-    Receives the research query from state, executes the ReAct tool-calling
-    loop to gather information, and returns raw consolidated search results.
-
-    The agent independently determines:
-    - How many searches to run (up to ``settings.MAX_TOOL_ITERATIONS``)
-    - What queries to formulate
-    - When sufficient information has been gathered
 
     Args:
         state: Current workflow state (must contain ``query``).
         llm:   Shared ChatGroq instance injected by the workflow.
 
     Returns:
-        Partial state dict with ``search_results`` (str) and appended ``messages``.
+        Partial state dict with ``search_results`` and appended ``messages``.
         On failure, also sets ``error``.
     """
     logger.info("[SearchAgent] Starting web search for query: %r", state["query"])
@@ -80,30 +68,32 @@ async def search_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, An
         HumanMessage(
             content=(
                 f"Research Query: {query}\n\n"
-                "Search for comprehensive information on this topic using multiple "
-                "targeted sub-queries. Retrieve both general web results and recent news."
+                "Search for comprehensive information using multiple targeted sub-queries. "
+                "Retrieve both general web results and recent news."
             )
         ),
     ]
 
     collected_results: list[str] = []
+    iteration = 0
 
     try:
         for iteration in range(1, settings.MAX_TOOL_ITERATIONS + 1):
-            logger.debug("[SearchAgent] Tool iteration %d/%d", iteration, settings.MAX_TOOL_ITERATIONS)
+            logger.debug(
+                "[SearchAgent] Tool iteration %d/%d", iteration, settings.MAX_TOOL_ITERATIONS
+            )
 
             response = await llm_with_tools.ainvoke(messages)
             messages.append(response)
 
             if not response.tool_calls:
-                # LLM finished reasoning — capture any final synthesis text
                 if response.content:
                     collected_results.append(str(response.content))
                 break
 
             for tool_call in response.tool_calls:
                 tool_name: str = tool_call.get("name", "unknown")
-                tool_args: Dict[str, Any] = tool_call.get("args", {})
+                tool_args: dict[str, Any] = tool_call.get("args", {})
                 tool_id: str = tool_call.get("id", "")
 
                 logger.info("[SearchAgent] Tool call: %s(%s)", tool_name, tool_args)
@@ -117,7 +107,9 @@ async def search_agent_node(state: ResearchState, llm: ChatGroq) -> Dict[str, An
                 collected_results.append(f"[{tool_name}({tool_args})]:\n{result}")
                 messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
 
-        raw_results = "\n\n".join(collected_results) if collected_results else "No results retrieved."
+        raw_results = (
+            "\n\n".join(collected_results) if collected_results else "No results retrieved."
+        )
         final_output = f"=== WEB SEARCH RESULTS ===\nQuery: {query}\n\n{raw_results}"
 
         logger.info(
